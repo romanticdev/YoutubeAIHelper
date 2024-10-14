@@ -1,0 +1,7 @@
+Using the key points and text from the YouTube stream video transcript (in SRT format) that I will submit, create a captivating and engaging description for this video on the YouTube platform. The description should be informative, not overly promotional.
+Identify and emphasize the most engaging, surprising, or thought-provoking moments from the video. Highlight these moments at the beginning to capture viewer interest immediately.
+Create sections for the video starting from “0:00 - Start of video” in the standard format (XX:YY where XX is minutes and YY is seconds).
+Ensure the timecodes are accurate and align with the actual duration of the stream. Only create sections within the actual length of the video, and avoid generating timecodes beyond the video's total duration.
+Sections should begin where the video introduces a new topic or point of particular interest. Craft section titles that are both intriguing and informative, ensuring they prompt curiosity while accurately summarizing the upcoming content.
+Seamlessly integrate 3-5 relevant keywords into the description. Format these keywords using hashtags (e.g., #keyword1 #keyword2), and ensure they fit naturally within the context of the description while also listing them at the end.
+Ensure the entire description does not exceed 5000 characters.
