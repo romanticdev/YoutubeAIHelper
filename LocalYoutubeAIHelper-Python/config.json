@@ -1,0 +1,6 @@
+{
+    "model": "gpt-3.5-turbo",
+    "max_tokens": 1500,
+    "openai_api_key": "YOUR_OPENAI_API_KEY",
+    "prompts_folder": "prompts"
+}

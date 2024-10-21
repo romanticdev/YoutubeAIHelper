@@ -1,0 +1,8 @@
+Using the key points and topics in the YouTube video text transcript that I will send, please create highly competitive and trending keywords for this video. Please extract relevant keywords only.
+
+Keywords must be prepared and optimized for the YouTube service.
+The total length of all keywords should not exceed 500 characters, som please choose only the best keywords, but it should be at least 450 characters.
+They will be inserted into the keyword section below the video, so they should be in the format like the following line:
+keyword 1, keyword 2, ...
+Here is an example of keywords for one of the previous videos (next line):
+captivating, chatGPT, wisdom
