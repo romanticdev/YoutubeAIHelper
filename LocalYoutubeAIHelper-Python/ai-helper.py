@@ -2,47 +2,52 @@ import argparse
 import os
 import sys
 import re
-import shutil
-import json
-import requests
-from pytube import YouTube
+import yt_dlp
 from pydub import AudioSegment
 from pydub.utils import make_chunks
+import openai
 
-# Install the openai library if not already installed
-try:
-    import openai
-except ImportError:
-    print("The 'openai' library is not installed. Installing now...")
-    os.system(f"{sys.executable} -m pip install openai")
-    import openai
-
-# Install pydub if not already installed
-try:
-    from pydub import AudioSegment
-except ImportError:
-    print("The 'pydub' library is not installed. Installing now...")
-    os.system(f"{sys.executable} -m pip install pydub")
-    from pydub import AudioSegment
+def extract_text_from_srt(srt_content):
+    """
+    Extracts the plain text from the given SRT content.
+    
+    Parameters:
+    srt_content (str): The content of the SRT file as a string.
+    
+    Returns:
+    str: The extracted plain text.
+    """
+    # Regular expression to match the SRT timestamps and sequence numbers
+    srt_pattern = re.compile(r'\d+\n\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3}\n')
+    
+    # Remove the timestamps and sequence numbers, and clean up the text
+    plain_text = re.sub(srt_pattern, '', srt_content)
+    
+    # Remove extra newlines and return the result
+    plain_text = plain_text.replace('\n\n', '\n').strip()
+    
+    return plain_text
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Video Downloader and Transcriber')
+    parser.add_argument('--config_folder', help='Path to configuration folder', default='configurations/generic')
     subparsers = parser.add_subparsers(dest='mode', required=True)
 
-    # Subparser for downloading and transcribing YouTube videos
-    parser_download = subparsers.add_parser('download_and_transcribe', help='Download and transcribe YouTube videos')
-    parser_download.add_argument('urls', nargs='+', help='YouTube URLs to download and transcribe')
-    parser_download.add_argument('--config_folder', help='Path to configuration folder', default='configurations/default')
+    # Subparser for full process: download, transcribe, and process prompts
+    parser_full = subparsers.add_parser('full_process', help='Download, transcribe, and process prompts')
+    parser_full.add_argument('urls', nargs='+', help='YouTube URLs to download and process')
 
-    # Subparser for transcribing local files
-    parser_transcribe = subparsers.add_parser('transcribe_files', help='Transcribe local audio files')
-    parser_transcribe.add_argument('files', nargs='+', help='Audio files to transcribe')
-    parser_transcribe.add_argument('--config_folder', help='Path to configuration folder', default='configurations/default')
+    # Subparser for downloading YouTube videos
+    parser_download = subparsers.add_parser('download', help='Download YouTube videos')
+    parser_download.add_argument('urls', nargs='+', help='YouTube URLs to download')
 
-    # Subparser for processing prompts on already transcribed files
+    # Subparser for transcribing local audio files
+    parser_transcribe = subparsers.add_parser('transcribe', help='Transcribe local audio files')
+    parser_transcribe.add_argument('folders', nargs='+', help='Folders containing mp3 files to transcribe')
+
+    # Subparser for processing prompts on transcribed files
     parser_prompts = subparsers.add_parser('process_prompts', help='Process prompts on transcribed files')
-    parser_prompts.add_argument('transcripts', nargs='+', help='Transcribed text files to process prompts on')
-    parser_prompts.add_argument('--config_folder', help='Path to configuration folder', default='configurations/default')
+    parser_prompts.add_argument('folders', nargs='+', help='Folders containing transcribed files')
 
     return parser.parse_args()
 
@@ -50,6 +55,8 @@ def load_config(config_folder):
     if not os.path.exists(config_folder):
         print(f"Error: Configuration folder '{config_folder}' not found.")
         sys.exit(1)
+
+    # Load LLM config
     llm_config_path = os.path.join(config_folder, 'llm_config.txt')
     if not os.path.exists(llm_config_path):
         print(f"Error: llm_config.txt not found in '{config_folder}'.")
@@ -65,39 +72,60 @@ def load_config(config_folder):
         if key not in config:
             print(f"Error: '{key}' is missing in llm_config.txt.")
             sys.exit(1)
-    # Add prompts_folder to config
+
+    # Load prompts folder
     prompts_folder = os.path.join(config_folder, 'prompts')
     if not os.path.exists(prompts_folder):
         print(f"Error: Prompts folder '{prompts_folder}' not found in configuration folder.")
         sys.exit(1)
     config['prompts_folder'] = prompts_folder
-    return config
+
+    # Load Whisper config
+    whisper_config_path = os.path.join(config_folder, 'whisper_config.txt')
+    whisper_config = {}
+    if os.path.exists(whisper_config_path):
+        with open(whisper_config_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                if '=' in line:
+                    key, value = line.strip().split('=', 1)
+                    whisper_config[key.strip()] = value.strip()
+    else:
+        whisper_config = {}
+
+    return config, whisper_config
 
 def sanitize_filename(filename):
-    # Remove invalid characters for filenames
-    sanitized = re.sub(r'[\\/*?:"<>|]', "_", filename)
-    sanitized = re.sub(r'\s+', '_', sanitized)
-    sanitized = re.sub(r'__+', '_', sanitized)
-    sanitized = sanitized.strip('_')
-    return sanitized
+    return "".join(c for c in filename if c.isalnum() or c in (' ', '.', '_', '-')).strip()
 
 def download_youtube_video(url, output_dir):
     try:
         print(f"Downloading video from URL: {url}")
-        yt = YouTube(url)
-        title = yt.title
-        raw_title = title
-        sanitized_title = sanitize_filename(title)
-        print(f"RAW title: {raw_title}")
-        print(f"Sanitized title: {sanitized_title}")
-        print()
+        ydl_opts_info = {'quiet': True}
+        with yt_dlp.YoutubeDL(ydl_opts_info) as ydl:
+            info_dict = ydl.extract_info(url, download=False)
+            title = info_dict.get('title', 'video')
+            sanitized_title = sanitize_filename(title)
+            print(f"RAW title: {title}")
+            print(f"Sanitized title: {sanitized_title}")
+
         video_folder = os.path.join(output_dir, sanitized_title)
-        print(f"Creating folder: '{video_folder}'")
         os.makedirs(video_folder, exist_ok=True)
-        audio_stream = yt.streams.filter(only_audio=True).first()
-        output_path = audio_stream.download(output_path=video_folder, filename=sanitized_title + '.mp3')
-        print(f"Downloaded and saved audio to: {output_path}")
-        return output_path, video_folder, sanitized_title
+
+        ydl_opts = {
+            'format': 'bestaudio/best',
+            'outtmpl': os.path.join(video_folder, f"{sanitized_title}.%(ext)s"),
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+            }],
+            'quiet': False,
+        }
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
+
+        audio_file = os.path.join(video_folder, f"{sanitized_title}.mp3")
+        print(f"Downloaded and saved audio to: {audio_file}")
+        return audio_file, video_folder, sanitized_title
     except Exception as e:
         print(f"Error downloading video from {url}: {e}")
         sys.exit(1)
@@ -121,80 +149,111 @@ def split_audio_file(file_path, max_size_bytes=24 * 1024 * 1024):
         print(f"Created chunk: {chunk_filename}")
     return chunk_files
 
-def transcribe_audio_files(audio_files, config, output_dir):
-    transcribed_files = []
+def transcribe_audio_files(audio_files, config, whisper_config):
     for audio_file in audio_files:
         print(f"Transcribing audio file: {audio_file}")
-        # Split audio if larger than 25 MB
         audio_parts = split_audio_file(audio_file)
         transcripts_txt = []
         transcripts_srt = []
         for part in audio_parts:
-            transcripts = transcribe_with_whisper_api(part, config)
-            transcripts_txt.append(transcripts['txt'])
-            transcripts_srt.append(transcripts['srt'])
-            # Remove the chunk file if it's a temporary split
+            transcripts = transcribe_with_whisper_api(part, config['openai_api_key'], whisper_config)
+            srt_content = transcripts['srt']
+            plain_text = extract_text_from_srt(srt_content)
+            transcripts_txt.append(plain_text)
+            transcripts_srt.append(srt_content)
             if part != audio_file:
                 os.remove(part)
         full_transcript_txt = "\n".join(transcripts_txt)
         full_transcript_srt = "\n".join(transcripts_srt)
-        base_name = os.path.basename(audio_file)
-        sanitized_base = sanitize_filename(os.path.splitext(base_name)[0])
+        output_dir = os.path.dirname(audio_file)
 
-        transcript_file_txt = os.path.join(output_dir, f"{sanitized_base}.txt")
+        transcript_file_txt = os.path.join(output_dir, 'transcript.txt')
         with open(transcript_file_txt, 'w', encoding='utf-8') as f:
             f.write(full_transcript_txt)
         print(f"Saved transcription to: {transcript_file_txt}")
 
-        transcript_file_srt = os.path.join(output_dir, f"{sanitized_base}.srt")
+        transcript_file_srt = os.path.join(output_dir, 'transcript.srt')
         with open(transcript_file_srt, 'w', encoding='utf-8') as f:
             f.write(full_transcript_srt)
         print(f"Saved transcription to: {transcript_file_srt}")
 
-        transcribed_files.append({'txt': transcript_file_txt, 'srt': transcript_file_srt, 'base': os.path.splitext(transcript_file_txt)[0]})
-    return transcribed_files
-
-def transcribe_with_whisper_api(audio_file, config):
-    openai.api_key = config['openai_api_key']
+def transcribe_with_whisper_api(audio_file, openai_api_key, whisper_config):
+    # Initialize the OpenAI client
+    client = openai.OpenAI(api_key=openai_api_key)
+    
     transcripts = {}
+    params = {}
+
+    # Process whisper configuration and supported parameters
+    for key, value in whisper_config.items():
+        if key == 'temperature':
+            params[key] = float(value)
+        elif key in ['language', 'prompt', 'response_format', 'max_alternatives', 'profanity_filter']:
+            params[key] = value
+
     try:
         with open(audio_file, 'rb') as f:
-            print(f"Sending audio file '{audio_file}' to Whisper API for text transcription...")
-            response = openai.Audio.transcribe("whisper-1", f, response_format='text')
-            transcripts['txt'] = response
-
-        with open(audio_file, 'rb') as f:
-            print(f"Sending audio file '{audio_file}' to Whisper API for srt transcription...")
-            response = openai.Audio.transcribe("whisper-1", f, response_format='srt')
-            transcripts['srt'] = response
+            print(f"Sending audio file '{audio_file}' to Whisper API for transcription...")
+            
+            # Use the new API structure
+            response = client.audio.transcriptions.create(
+                file=f,
+                model="whisper-1",
+                response_format='srt',  # Transcribe in SRT format
+                **params
+            )
+            transcripts['srt'] = response  # Save SRT response
 
         return transcripts
     except Exception as e:
         print(f"Error transcribing audio file '{audio_file}': {e}")
         sys.exit(1)
 
-def process_prompts_on_transcripts(transcribed_files, config):
+
+def process_prompts_on_transcripts(folders, config):
     prompts_folder = config['prompts_folder']
-    prompt_files = [os.path.join(prompts_folder, f) for f in os.listdir(prompts_folder) if f.endswith(('.txt', '.srt'))]
+    prompt_files = [os.path.join(prompts_folder, f) for f in os.listdir(prompts_folder) if os.path.isfile(os.path.join(prompts_folder, f))]
     if not prompt_files:
         print(f"Error: No prompt files found in '{prompts_folder}'.")
         sys.exit(1)
-    for transcribed_file in transcribed_files:
-        print(f"Processing prompts on transcript: {transcribed_file['base']}")
-        for prompt_file in prompt_files:
-            process_single_prompt(prompt_file, transcribed_file, transcribed_file['base'], config)
 
-def process_single_prompt(prompt_file, transcribed_file, transcript_file_base, config):
+    for folder in folders:
+        if not os.path.exists(folder):
+            print(f"Error: Folder '{folder}' not found.")
+            continue
+
+        transcript_txt = os.path.join(folder, 'transcript.txt')
+        transcript_srt = os.path.join(folder, 'transcript.srt')
+        if not os.path.exists(transcript_txt) and not os.path.exists(transcript_srt):
+            print(f"No transcript files found in folder '{folder}'.")
+            continue
+
+        transcribed_file = {'base': os.path.join(folder, 'transcript')}
+        if os.path.exists(transcript_txt):
+            transcribed_file['txt'] = transcript_txt
+        if os.path.exists(transcript_srt):
+            transcribed_file['srt'] = transcript_srt
+
+        print(f"Processing prompts on transcripts in folder: {folder}")
+        for prompt_file in prompt_files:
+            process_single_prompt(prompt_file, transcribed_file, folder, config)
+
+
+def process_single_prompt(prompt_file, transcribed_file, folder, config):
+    # Read the prompt content from the file
     with open(prompt_file, 'r', encoding='utf-8') as f:
         prompt_content = f.read()
+
     prompt_name = os.path.splitext(os.path.basename(prompt_file))[0]
     prompt_ext = os.path.splitext(prompt_file)[1].lower()
     print(f"Processing prompt: {prompt_name}")
-    openai.api_key = config['openai_api_key']
+
+    # Initialize OpenAI client
+    client = openai.OpenAI(api_key=config['openai_api_key'])
     model = config['model']
     max_tokens = config['max_tokens']
 
-    # Use appropriate transcript file based on prompt file extension
+    # Use appropriate transcribed file based on extension
     if prompt_ext == '.srt':
         user_content_file = transcribed_file.get('srt')
     else:
@@ -202,8 +261,9 @@ def process_single_prompt(prompt_file, transcribed_file, transcript_file_base, c
 
     if not user_content_file or not os.path.exists(user_content_file):
         print(f"Error: Transcribed file '{user_content_file}' not found.")
-        sys.exit(1)
+        return
 
+    # Read the user content from the transcribed file
     with open(user_content_file, 'r', encoding='utf-8') as f:
         user_content = f.read()
 
@@ -211,63 +271,68 @@ def process_single_prompt(prompt_file, transcribed_file, transcript_file_base, c
         {"role": "system", "content": prompt_content},
         {"role": "user", "content": user_content}
     ]
+
     try:
-        response = openai.ChatCompletion.create(
+        # Use the updated ChatCompletion API
+        response = client.chat.completions.create(
             model=model,
             messages=messages,
             max_tokens=int(max_tokens)
         )
-        assistant_content = response['choices'][0]['message']['content']
-        # Save response to file
-        output_file = f"{transcript_file_base}_{prompt_name}.txt"
+        assistant_content = response.choices[0].message.content  # Use dot notation to access content
+
+        # Ensure unique output filename
+        output_filename = f"{prompt_name}.prompt.txt"
+        output_file = os.path.join(folder, output_filename)
+        file_number = 1
+        while os.path.exists(output_file):
+            file_number += 1
+            output_filename = f"{prompt_name}.{file_number}.prompt.txt"
+            output_file = os.path.join(folder, output_filename)
+
+        # Save the assistant's response
         with open(output_file, 'w', encoding='utf-8') as f:
             f.write(assistant_content)
         print(f"Saved response to: {output_file}")
+
     except Exception as e:
         print(f"Error processing prompt '{prompt_name}': {e}")
-        sys.exit(1)
+
+
 
 def main():
     args = parse_arguments()
-    config = load_config(args.config_folder)
+    config, whisper_config = load_config(args.config_folder)
 
-    if args.mode == 'download_and_transcribe':
+    if args.mode == 'full_process':
         output_dir = os.path.join(os.getcwd(), 'videos')
         os.makedirs(output_dir, exist_ok=True)
-        all_transcribed_files = []
+        all_folders = []
         for url in args.urls:
             audio_file, video_folder, sanitized_title = download_youtube_video(url, output_dir)
-            transcribed_files = transcribe_audio_files([audio_file], config, video_folder)
-            all_transcribed_files.extend(transcribed_files)
-        process_prompts_on_transcripts(all_transcribed_files, config)
+            transcribe_audio_files([audio_file], config, whisper_config)
+            all_folders.append(video_folder)
+        process_prompts_on_transcripts(all_folders, config)
 
-    elif args.mode == 'transcribe_files':
-        all_transcribed_files = []
-        for audio_file in args.files:
-            if not os.path.exists(audio_file):
-                print(f"Error: Audio file '{audio_file}' not found.")
+    elif args.mode == 'download':
+        output_dir = os.path.join(os.getcwd(), 'videos')
+        os.makedirs(output_dir, exist_ok=True)
+        for url in args.urls:
+            download_youtube_video(url, output_dir)
+
+    elif args.mode == 'transcribe':
+        for folder in args.folders:
+            if not os.path.exists(folder):
+                print(f"Error: Folder '{folder}' not found.")
                 continue
-            output_dir = os.path.dirname(audio_file)
-            transcribed_files = transcribe_audio_files([audio_file], config, output_dir)
-            all_transcribed_files.extend(transcribed_files)
-        process_prompts_on_transcripts(all_transcribed_files, config)
+            audio_files = [os.path.join(folder, f) for f in os.listdir(folder) if f.endswith('.mp3')]
+            if not audio_files:
+                print(f"No mp3 files found in folder '{folder}'.")
+                continue
+            transcribe_audio_files(audio_files, config, whisper_config)
 
     elif args.mode == 'process_prompts':
-        transcribed_files = []
-        for transcript_file in args.transcripts:
-            if not os.path.exists(transcript_file):
-                print(f"Error: Transcript file '{transcript_file}' not found.")
-                continue
-            # Determine the base name and look for both txt and srt files
-            base_name = os.path.splitext(transcript_file)[0]
-            transcript_files = {}
-            if os.path.exists(base_name + '.txt'):
-                transcript_files['txt'] = base_name + '.txt'
-            if os.path.exists(base_name + '.srt'):
-                transcript_files['srt'] = base_name + '.srt'
-            transcript_files['base'] = base_name
-            transcribed_files.append(transcript_files)
-        process_prompts_on_transcripts(transcribed_files, config)
+        process_prompts_on_transcripts(args.folders, config)
 
 if __name__ == "__main__":
     main()
