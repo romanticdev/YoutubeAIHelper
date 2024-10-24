@@ -3,9 +3,26 @@ import os
 import sys
 import re
 import yt_dlp
-from pydub import AudioSegment
-from pydub.utils import make_chunks
 import openai
+import concurrent.futures
+import datetime
+
+# Install the required libraries if not already installed
+try:
+    import srt
+except ImportError:
+    print("The 'srt' library is not installed. Installing now...")
+    os.system(f"{sys.executable} -m pip install srt")
+    import srt
+
+try:
+    from pydub import AudioSegment
+    from pydub.utils import make_chunks
+except ImportError:
+    print("The 'pydub' library is not installed. Installing now...")
+    os.system(f"{sys.executable} -m pip install pydub")
+    from pydub import AudioSegment
+    from pydub.utils import make_chunks
 
 def extract_text_from_srt(srt_content):
     """
@@ -130,52 +147,87 @@ def download_youtube_video(url, output_dir):
         print(f"Error downloading video from {url}: {e}")
         sys.exit(1)
 
-def split_audio_file(file_path, max_size_bytes=24 * 1024 * 1024):
+def split_audio_file(file_path, max_size_bytes=24 * 1024 * 1024, chunk_length_ms=900000, overlap_ms=5000):
     audio = AudioSegment.from_file(file_path)
     duration_ms = len(audio)
     file_size = os.path.getsize(file_path)
     if file_size <= max_size_bytes:
-        return [file_path]
+        return [{'file_path': file_path, 'start_time': 0, 'is_temp': False}]
 
     print(f"Audio file '{file_path}' is larger than {max_size_bytes} bytes. Splitting into smaller chunks...")
-    chunk_length_ms = duration_ms * max_size_bytes / file_size
-    chunks = make_chunks(audio, int(chunk_length_ms))
-    base, ext = os.path.splitext(file_path)
-    chunk_files = []
-    for i, chunk in enumerate(chunks):
-        chunk_filename = f"{base}_part{i}{ext}"
+    chunks = []
+    start = 0
+    while start < duration_ms:
+        end = min(start + chunk_length_ms, duration_ms)
+        chunk = audio[start:end]
+        chunk_filename = f"{os.path.splitext(file_path)[0]}_part{start // 1000}-{end // 1000}.mp3"
         chunk.export(chunk_filename, format="mp3")
-        chunk_files.append(chunk_filename)
-        print(f"Created chunk: {chunk_filename}")
-    return chunk_files
+        chunks.append({'file_path': chunk_filename, 'start_time': start, 'is_temp': True})
+        print(f"Created chunk: {chunk_filename}, Start time: {start} ms")
+        start += chunk_length_ms - overlap_ms
+    return chunks
 
 def transcribe_audio_files(audio_files, config, whisper_config):
     for audio_file in audio_files:
         print(f"Transcribing audio file: {audio_file}")
-        audio_parts = split_audio_file(audio_file)
+        chunks = split_audio_file(audio_file)
+        output_dir = os.path.dirname(audio_file)
         transcripts_txt = []
         transcripts_srt = []
-        for part in audio_parts:
-            transcripts = transcribe_with_whisper_api(part, config['openai_api_key'], whisper_config)
-            srt_content = transcripts['srt']
-            plain_text = extract_text_from_srt(srt_content)
-            transcripts_txt.append(plain_text)
-            transcripts_srt.append(srt_content)
-            if part != audio_file:
-                os.remove(part)
-        full_transcript_txt = "\n".join(transcripts_txt)
-        full_transcript_srt = "\n".join(transcripts_srt)
-        output_dir = os.path.dirname(audio_file)
 
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            futures = [executor.submit(transcribe_chunk, chunk, config['openai_api_key'], whisper_config) for chunk in chunks]
+            for future in concurrent.futures.as_completed(futures):
+                result = future.result()
+                transcripts_txt.append(result['txt'])
+                transcripts_srt.extend(result['srt'])  # result['srt'] is a list of srt.Subtitle objects
+
+        # Combine text transcripts
+        full_transcript_txt = "\n".join(transcripts_txt)
         transcript_file_txt = os.path.join(output_dir, 'transcript.txt')
         with open(transcript_file_txt, 'w', encoding='utf-8') as f:
             f.write(full_transcript_txt)
         print(f"Saved transcription to: {transcript_file_txt}")
 
+        # Combine and write SRT transcripts
+        # Sort subtitles by start time
+        transcripts_srt.sort(key=lambda x: x.start)
+        # Re-number subtitles
+        for i, subtitle in enumerate(transcripts_srt, 1):
+            subtitle.index = i
+        # Generate SRT content
+        full_transcript_srt = srt.compose(transcripts_srt)
         transcript_file_srt = os.path.join(output_dir, 'transcript.srt')
         with open(transcript_file_srt, 'w', encoding='utf-8') as f:
             f.write(full_transcript_srt)
         print(f"Saved transcription to: {transcript_file_srt}")
+
+def transcribe_chunk(chunk, openai_api_key, whisper_config):
+    audio_file = chunk['file_path']
+    start_time_ms = chunk['start_time']
+    is_temp = chunk['is_temp']
+    transcripts = transcribe_with_whisper_api(audio_file, openai_api_key, whisper_config)
+    srt_content = transcripts['srt']
+    plain_text = extract_text_from_srt(srt_content)
+    # Adjust SRT timings
+    adjusted_subtitles = adjust_srt_timestamps(srt_content, start_time_ms)
+    # Remove chunk file if it's a temporary split
+    if is_temp:
+        os.remove(audio_file)
+    return {'txt': plain_text, 'srt': adjusted_subtitles}
+
+def adjust_srt_timestamps(srt_content, start_time_ms):
+    subtitles = list(srt.parse(srt_content))
+    start_time = datetime.timedelta(milliseconds=start_time_ms)
+    for subtitle in subtitles:
+        subtitle.start += start_time
+        subtitle.end += start_time
+    return subtitles
+
+def extract_text_from_srt(srt_content):
+    subtitles = list(srt.parse(srt_content))
+    texts = [subtitle.content for subtitle in subtitles]
+    return '\n'.join(texts)
 
 def transcribe_with_whisper_api(audio_file, openai_api_key, whisper_config):
     # Initialize the OpenAI client
