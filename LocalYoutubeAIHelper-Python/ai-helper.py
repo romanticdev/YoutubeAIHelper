@@ -84,7 +84,7 @@ def load_config(config_folder):
             if '=' in line:
                 key, value = line.strip().split('=', 1)
                 config[key.strip()] = value.strip()
-    required_keys = ['model', 'max_tokens', 'openai_api_key']
+    required_keys = ['model', 'max_tokens', 'openai_api_key','temperature']
     for key in required_keys:
         if key not in config:
             print(f"Error: '{key}' is missing in llm_config.txt.")
@@ -229,6 +229,34 @@ def extract_text_from_srt(srt_content):
     texts = [subtitle.content for subtitle in subtitles]
     return '\n'.join(texts)
 
+def convert_srt_to_custom_format(srt_content):
+    # Regular expression to match timestamps and text
+    pattern = r"(\d{2}:\d{2}:\d{2}),\d{3} --> \d{2}:\d{2}:\d{2},\d{3}\n(.*)"
+    
+    # Find all matches in the srt content
+    matches = re.findall(pattern, srt_content)
+    
+    # Initialize list to hold the formatted lines and variable for last timestamp
+    formatted_lines = []
+    last_timestamp = "00:00:00"
+    
+    for timestamp, text in matches:
+        # Update the last timestamp found
+        last_timestamp = timestamp
+        
+        # Convert to the desired format and append
+        formatted_line = f"[{timestamp}] {text}"
+        formatted_lines.append(formatted_line)
+    
+    # Calculate the total length in seconds from the last timestamp
+    hours, minutes, seconds = map(int, last_timestamp.split(":"))
+    total_length_seconds = hours * 3600 + minutes * 60 + seconds
+    
+    # Join all formatted lines with newline characters
+    formatted_text = "\n".join(formatted_lines)
+    
+    return formatted_text, total_length_seconds
+
 def transcribe_with_whisper_api(audio_file, openai_api_key, whisper_config):
     # Initialize the OpenAI client
     client = openai.OpenAI(api_key=openai_api_key)
@@ -304,6 +332,10 @@ def process_single_prompt(prompt_file, transcribed_file, folder, config):
     client = openai.OpenAI(api_key=config['openai_api_key'])
     model = config['model']
     max_tokens = config['max_tokens']
+    temperature = config['temperature']
+    top_p = 1.0
+    if (config['top_p']):
+        top_p = config['top_p']
 
     # Use appropriate transcribed file based on extension
     if prompt_ext == '.srt':
@@ -315,9 +347,18 @@ def process_single_prompt(prompt_file, transcribed_file, folder, config):
         print(f"Error: Transcribed file '{user_content_file}' not found.")
         return
 
+    total_length = 0
+
     # Read the user content from the transcribed file
     with open(user_content_file, 'r', encoding='utf-8') as f:
         user_content = f.read()
+
+    if prompt_ext == '.srt':
+        user_content,total_length = convert_srt_to_custom_format(user_content)
+
+    # Replace '{transcript_length}' in user_content with total_length, if it exists
+    if '{transcript_length}' in user_content:
+        user_content = user_content.replace('{transcript_length}', str(total_length))
 
     messages = [
         {"role": "system", "content": prompt_content},
@@ -325,11 +366,14 @@ def process_single_prompt(prompt_file, transcribed_file, folder, config):
     ]
 
     try:
+        print(f"temparature is {temperature} and top_p is {top_p}")
         # Use the updated ChatCompletion API
         response = client.chat.completions.create(
             model=model,
             messages=messages,
-            max_tokens=int(max_tokens)
+            temperature=temperature,
+            max_tokens=int(max_tokens),
+            top_p=top_p
         )
         assistant_content = response.choices[0].message.content  # Use dot notation to access content
 
