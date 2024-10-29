@@ -334,7 +334,7 @@ def process_single_prompt(prompt_file, transcribed_file, folder, config):
     max_tokens = config['max_tokens']
     temperature = config['temperature']
     top_p = 1.0
-    if (config['top_p']):
+    if ('top_p' in config):
         top_p = config['top_p']
 
     # Use appropriate transcribed file based on extension
