@@ -6,6 +6,7 @@ import yt_dlp
 import openai
 import concurrent.futures
 import datetime
+import subprocess
 
 # Install the required libraries if not already installed
 try:
@@ -17,12 +18,13 @@ except ImportError:
 
 try:
     from pydub import AudioSegment
-    from pydub.utils import make_chunks
 except ImportError:
     print("The 'pydub' library is not installed. Installing now...")
     os.system(f"{sys.executable} -m pip install pydub")
     from pydub import AudioSegment
-    from pydub.utils import make_chunks
+
+# Set the desired audio bitrate for downloaded MP3 files
+AUDIO_BITRATE = '12k'  # You can adjust this value as needed
 
 def extract_text_from_srt(srt_content):
     """
@@ -34,16 +36,9 @@ def extract_text_from_srt(srt_content):
     Returns:
     str: The extracted plain text.
     """
-    # Regular expression to match the SRT timestamps and sequence numbers
-    srt_pattern = re.compile(r'\d+\n\d{2}:\d{2}:\d{2},\d{3} --> \d{2}:\d{2}:\d{2},\d{3}\n')
-    
-    # Remove the timestamps and sequence numbers, and clean up the text
-    plain_text = re.sub(srt_pattern, '', srt_content)
-    
-    # Remove extra newlines and return the result
-    plain_text = plain_text.replace('\n\n', '\n').strip()
-    
-    return plain_text
+    subtitles = list(srt.parse(srt_content))
+    texts = [subtitle.content for subtitle in subtitles]
+    return '\n'.join(texts)
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Video Downloader and Transcriber')
@@ -84,7 +79,7 @@ def load_config(config_folder):
             if '=' in line:
                 key, value = line.strip().split('=', 1)
                 config[key.strip()] = value.strip()
-    required_keys = ['model', 'max_tokens', 'openai_api_key','temperature']
+    required_keys = ['model', 'max_tokens', 'openai_api_key']
     for key in required_keys:
         if key not in config:
             print(f"Error: '{key}' is missing in llm_config.txt.")
@@ -118,6 +113,8 @@ def download_youtube_video(url, output_dir):
     try:
         print(f"Downloading video from URL: {url}")
         ydl_opts_info = {'quiet': True}
+
+        # Extract info for title and sanitization
         with yt_dlp.YoutubeDL(ydl_opts_info) as ydl:
             info_dict = ydl.extract_info(url, download=False)
             title = info_dict.get('title', 'video')
@@ -125,69 +122,110 @@ def download_youtube_video(url, output_dir):
             print(f"RAW title: {title}")
             print(f"Sanitized title: {sanitized_title}")
 
+        # Create directory for downloaded files
         video_folder = os.path.join(output_dir, sanitized_title)
         os.makedirs(video_folder, exist_ok=True)
 
+        # yt-dlp options to download the original audio format (webm/m4a)
         ydl_opts = {
             'format': 'bestaudio/best',
             'outtmpl': os.path.join(video_folder, f"{sanitized_title}.%(ext)s"),
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-            }],
             'quiet': False,
         }
+
+        # Download the original audio (e.g., webm or m4a) using yt-dlp
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
-        audio_file = os.path.join(video_folder, f"{sanitized_title}.mp3")
-        print(f"Downloaded and saved audio to: {audio_file}")
-        return audio_file, video_folder, sanitized_title
+        # Locate the downloaded audio file (e.g., .webm or .m4a)
+        original_audio_path = os.path.join(video_folder, f"{sanitized_title}.webm")
+        ogg_file = os.path.join(video_folder, f"{sanitized_title}.ogg")
+
+        # Convert original audio to ogg using ffmpeg with specified parameters
+        ffmpeg_command = [
+            'ffmpeg', '-i', original_audio_path, '-vn', '-map_metadata', '-1', '-ac', '1',
+            '-c:a', 'libopus', '-b:a', AUDIO_BITRATE, '-application', 'voip', ogg_file
+        ]
+
+        print(f"Converting {original_audio_path} to OGG format with specified parameters.")
+        subprocess.run(ffmpeg_command, check=True)
+
+        print(f"Downloaded and converted audio saved to: {ogg_file}")
+        return ogg_file, video_folder, sanitized_title
+
     except Exception as e:
-        print(f"Error downloading video from {url}: {e}")
+        print(f"Error downloading or converting video from {url}: {e}")
         sys.exit(1)
 
-def split_audio_file(file_path, max_size_bytes=24 * 1024 * 1024, chunk_length_ms=900000, overlap_ms=5000):
-    audio = AudioSegment.from_file(file_path)
-    duration_ms = len(audio)
-    file_size = os.path.getsize(file_path)
-    if file_size <= max_size_bytes:
-        return [{'file_path': file_path, 'start_time': 0, 'is_temp': False}]
+def split_audio_ffmpeg(input_file, start_time, end_time, output_file):
+    # Convert start_time and end_time to a format suitable for ffmpeg
+    start_time_str = str(datetime.timedelta(milliseconds=start_time))
+    duration_ms = end_time - start_time
+    duration_str = str(datetime.timedelta(milliseconds=duration_ms))
 
-    print(f"Audio file '{file_path}' is larger than {max_size_bytes} bytes. Splitting into smaller chunks...")
+    command = [
+        'ffmpeg', '-y', '-i', input_file,
+        '-ss', start_time_str, '-t', duration_str,
+        '-ac', '1', '-c:a', 'libopus', '-b:a', AUDIO_BITRATE, '-application', 'voip', output_file
+    ]
+    
+    subprocess.run(command, check=True)
+
+def get_audio_duration(file_path):
+    try:
+        # Use ffprobe to get duration
+        command = [
+            'ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+            '-of', 'default=noprint_wrappers=1:nokey=1', f'"{file_path}"'
+        ]
+        result = subprocess.run(" ".join(command), shell=True, capture_output=True, text=True, check=True)
+        duration = float(result.stdout.strip()) * 1000  # Convert seconds to milliseconds
+        return duration
+    except Exception as e:
+        print(f"Error retrieving audio duration: {e}")
+        return None
+
+def split_audio_file(file_path, chunk_length_ms=4 * 60 * 60 * 1000, overlap_ms=10000):
+    # Check the file size and skip splitting if under 24.8 MB
+    file_size = os.path.getsize(file_path)
+    if file_size <= 24.8 * 1024 * 1024:
+        return [{'file_path': file_path, 'start_time': 0, 'is_temp': False}]
+    
+    # Get duration of audio file
+    duration_ms = get_audio_duration(file_path)
+    if duration_ms is None:
+        return []
+
+    print(f"Audio file '{file_path}' is larger than 24.8 MB. Splitting into 4-hour chunks with 10s overlap...")
     chunks = []
     start = 0
     while start < duration_ms:
         end = min(start + chunk_length_ms, duration_ms)
-        chunk = audio[start:end]
-        chunk_filename = f"{os.path.splitext(file_path)[0]}_part{start // 1000}-{end // 1000}.mp3"
-        chunk.export(chunk_filename, format="mp3")
+        chunk_filename = f"{os.path.splitext(file_path)[0]}_part{start // 1000}-{end // 1000}.ogg"
+        
+        # Use ffmpeg to create the chunk
+        split_audio_ffmpeg(file_path, start, end, chunk_filename)
         chunks.append({'file_path': chunk_filename, 'start_time': start, 'is_temp': True})
+        
         print(f"Created chunk: {chunk_filename}, Start time: {start} ms")
         start += chunk_length_ms - overlap_ms
+    
     return chunks
 
 def transcribe_audio_files(audio_files, config, whisper_config):
+    openai.api_key = config['openai_api_key']
+
     for audio_file in audio_files:
         print(f"Transcribing audio file: {audio_file}")
         chunks = split_audio_file(audio_file)
         output_dir = os.path.dirname(audio_file)
-        transcripts_txt = []
         transcripts_srt = []
 
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            futures = [executor.submit(transcribe_chunk, chunk, config['openai_api_key'], whisper_config) for chunk in chunks]
+            futures = [executor.submit(transcribe_chunk, chunk, whisper_config, config) for chunk in chunks]
             for future in concurrent.futures.as_completed(futures):
                 result = future.result()
-                transcripts_txt.append(result['txt'])
                 transcripts_srt.extend(result['srt'])  # result['srt'] is a list of srt.Subtitle objects
-
-        # Combine text transcripts
-        full_transcript_txt = "\n".join(transcripts_txt)
-        transcript_file_txt = os.path.join(output_dir, 'transcript.txt')
-        with open(transcript_file_txt, 'w', encoding='utf-8') as f:
-            f.write(full_transcript_txt)
-        print(f"Saved transcription to: {transcript_file_txt}")
 
         # Combine and write SRT transcripts
         # Sort subtitles by start time
@@ -197,24 +235,46 @@ def transcribe_audio_files(audio_files, config, whisper_config):
             subtitle.index = i
         # Generate SRT content
         full_transcript_srt = srt.compose(transcripts_srt)
+
+        transcript_file_temp_srt = os.path.join(output_dir, 'transcript.temp.srt')
+        with open(transcript_file_temp_srt, 'w', encoding='utf-8') as f:
+            f.write(full_transcript_srt)
+
+        # TODO :: Clean up the transcript only if there are multiple chunks
+        cleaned_transcript_srt = full_transcript_srt        
+       
         transcript_file_srt = os.path.join(output_dir, 'transcript.srt')
         with open(transcript_file_srt, 'w', encoding='utf-8') as f:
-            f.write(full_transcript_srt)
-        print(f"Saved transcription to: {transcript_file_srt}")
+            f.write(cleaned_transcript_srt)
+        print(f"Saved cleaned transcription to: {transcript_file_srt}")
 
-def transcribe_chunk(chunk, openai_api_key, whisper_config):
+        # Extract text from cleaned SRT and save as TXT
+        full_transcript_txt = extract_text_from_srt(cleaned_transcript_srt)
+        transcript_file_txt = os.path.join(output_dir, 'transcript.txt')
+        with open(transcript_file_txt, 'w', encoding='utf-8') as f:
+            f.write(full_transcript_txt)
+        print(f"Saved text transcription to: {transcript_file_txt}")
+
+        # Convert cleaned SRT to custom format and save as llmsrt
+        llmsrt_content, total_length_seconds = convert_srt_to_custom_format(cleaned_transcript_srt)
+        transcript_file_llmsrt = os.path.join(output_dir, 'transcript.llmsrt')
+        with open(transcript_file_llmsrt, 'w', encoding='utf-8') as f:
+            f.write(llmsrt_content)
+        print(f"Saved simplified transcription to: {transcript_file_llmsrt}")
+
+def transcribe_chunk(chunk, whisper_config, config):
+    openai_api_key = config['openai_api_key']
     audio_file = chunk['file_path']
     start_time_ms = chunk['start_time']
     is_temp = chunk['is_temp']
     transcripts = transcribe_with_whisper_api(audio_file, openai_api_key, whisper_config)
     srt_content = transcripts['srt']
-    plain_text = extract_text_from_srt(srt_content)
     # Adjust SRT timings
     adjusted_subtitles = adjust_srt_timestamps(srt_content, start_time_ms)
     # Remove chunk file if it's a temporary split
     if is_temp:
         os.remove(audio_file)
-    return {'txt': plain_text, 'srt': adjusted_subtitles}
+    return { 'srt': adjusted_subtitles}
 
 def adjust_srt_timestamps(srt_content, start_time_ms):
     subtitles = list(srt.parse(srt_content))
@@ -224,37 +284,26 @@ def adjust_srt_timestamps(srt_content, start_time_ms):
         subtitle.end += start_time
     return subtitles
 
-def extract_text_from_srt(srt_content):
-    subtitles = list(srt.parse(srt_content))
-    texts = [subtitle.content for subtitle in subtitles]
-    return '\n'.join(texts)
-
 def convert_srt_to_custom_format(srt_content):
-    # Regular expression to match timestamps and text
-    pattern = r"(\d{2}:\d{2}:\d{2}),\d{3} --> \d{2}:\d{2}:\d{2},\d{3}\n(.*)"
-    
-    # Find all matches in the srt content
-    matches = re.findall(pattern, srt_content)
-    
-    # Initialize list to hold the formatted lines and variable for last timestamp
+    subtitles = list(srt.parse(srt_content))
     formatted_lines = []
     last_timestamp = "00:00:00"
-    
-    for timestamp, text in matches:
-        # Update the last timestamp found
+
+    for subtitle in subtitles:
+        hours = subtitle.start.seconds // 3600
+        minutes = (subtitle.start.seconds % 3600) // 60
+        seconds = subtitle.start.seconds % 60
+        milliseconds = subtitle.start.microseconds // 1000
+        timestamp = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
         last_timestamp = timestamp
-        
-        # Convert to the desired format and append
-        formatted_line = f"[{timestamp}] {text}"
+        formatted_line = f"[{timestamp}] {subtitle.content}"
         formatted_lines.append(formatted_line)
-    
+
     # Calculate the total length in seconds from the last timestamp
     hours, minutes, seconds = map(int, last_timestamp.split(":"))
     total_length_seconds = hours * 3600 + minutes * 60 + seconds
-    
-    # Join all formatted lines with newline characters
+
     formatted_text = "\n".join(formatted_lines)
-    
     return formatted_text, total_length_seconds
 
 def transcribe_with_whisper_api(audio_file, openai_api_key, whisper_config):
@@ -289,6 +338,44 @@ def transcribe_with_whisper_api(audio_file, openai_api_key, whisper_config):
         print(f"Error transcribing audio file '{audio_file}': {e}")
         sys.exit(1)
 
+def clean_up_transcript(full_transcript_srt, config):
+    # Initialize OpenAI API client
+    client = openai.OpenAI(api_key=config['openai_api_key'])
+
+    # Prepare messages for ChatGPT
+    messages = [
+        {
+            "role": "system",
+            "content": """You are an assistant that cleans up SRT transcripts 
+            by removing duplicate subtitles caused by overlapping audio chunks.
+            Return only the cleaned SRT content without any additional text, instructions,
+            or explanations."""
+        },
+        {
+            "role": "user",
+            "content": f"""The following SRT transcript was generated from overlapping 
+            audio chunks with about 5 seconds overlap between each chunk. The chunk size is
+            30 minutes long, so expect most work at 30:00, 1:00:00 and so on.
+            Please remove any duplicate subtitles caused by the overlap and 
+            provide only the cleaned-up, properly formatted SRT content.\n\n{full_transcript_srt}"""
+        },
+    ]
+
+    try:
+        max_tokens = config['max_tokens']
+        # Call OpenAI ChatCompletion API
+        response = client.chat.completions.create(
+            model=config['model'],
+            messages=messages,
+            temperature=0.2,
+            max_tokens=max_tokens,
+        )
+        cleaned_transcript_srt = response.choices[0].message.content
+        return cleaned_transcript_srt
+    except Exception as e:
+        print(f"Error cleaning up transcript: {e}")
+        sys.exit(1)
+
 
 def process_prompts_on_transcripts(folders, config):
     prompts_folder = config['prompts_folder']
@@ -302,22 +389,20 @@ def process_prompts_on_transcripts(folders, config):
             print(f"Error: Folder '{folder}' not found.")
             continue
 
+        transcribed_file = {'base': os.path.join(folder, 'transcript')}
         transcript_txt = os.path.join(folder, 'transcript.txt')
         transcript_srt = os.path.join(folder, 'transcript.srt')
-        if not os.path.exists(transcript_txt) and not os.path.exists(transcript_srt):
-            print(f"No transcript files found in folder '{folder}'.")
-            continue
-
-        transcribed_file = {'base': os.path.join(folder, 'transcript')}
+        transcript_llmsrt = os.path.join(folder, 'transcript.llmsrt')
         if os.path.exists(transcript_txt):
             transcribed_file['txt'] = transcript_txt
         if os.path.exists(transcript_srt):
             transcribed_file['srt'] = transcript_srt
+        if os.path.exists(transcript_llmsrt):
+            transcribed_file['llmsrt'] = transcript_llmsrt
 
         print(f"Processing prompts on transcripts in folder: {folder}")
         for prompt_file in prompt_files:
             process_single_prompt(prompt_file, transcribed_file, folder, config)
-
 
 def process_single_prompt(prompt_file, transcribed_file, folder, config):
     # Read the prompt content from the file
@@ -332,14 +417,12 @@ def process_single_prompt(prompt_file, transcribed_file, folder, config):
     client = openai.OpenAI(api_key=config['openai_api_key'])
     model = config['model']
     max_tokens = config['max_tokens']
-    temperature = config['temperature']
-    top_p = 1.0
-    if ('top_p' in config):
-        top_p = config['top_p']
+    temperature = float(config.get('temperature', 1.0))
+    top_p = float(config.get('top_p', 1.0))
 
     # Use appropriate transcribed file based on extension
     if prompt_ext == '.srt':
-        user_content_file = transcribed_file.get('srt')
+        user_content_file = transcribed_file.get('llmsrt')
     else:
         user_content_file = transcribed_file.get('txt')
 
@@ -354,7 +437,7 @@ def process_single_prompt(prompt_file, transcribed_file, folder, config):
         user_content = f.read()
 
     if prompt_ext == '.srt':
-        user_content,total_length = convert_srt_to_custom_format(user_content)
+        total_length = get_total_length_from_llmsrt(user_content)
 
     # Replace '{transcript_length}' in user_content with total_length, if it exists
     if '{transcript_length}' in user_content:
@@ -366,7 +449,6 @@ def process_single_prompt(prompt_file, transcribed_file, folder, config):
     ]
 
     try:
-        print(f"temparature is {temperature} and top_p is {top_p}")
         # Use the updated ChatCompletion API
         response = client.chat.completions.create(
             model=model,
@@ -394,7 +476,14 @@ def process_single_prompt(prompt_file, transcribed_file, folder, config):
     except Exception as e:
         print(f"Error processing prompt '{prompt_name}': {e}")
 
-
+def get_total_length_from_llmsrt(llmsrt_content):
+    last_line = llmsrt_content.strip().split('\n')[-1]
+    match = re.match(r'\[(\d{2}):(\d{2}):(\d{2})\]', last_line)
+    if match:
+        hours, minutes, seconds = map(int, match.groups())
+        total_seconds = hours * 3600 + minutes * 60 + seconds
+        return total_seconds
+    return 0
 
 def main():
     args = parse_arguments()
@@ -421,9 +510,9 @@ def main():
             if not os.path.exists(folder):
                 print(f"Error: Folder '{folder}' not found.")
                 continue
-            audio_files = [os.path.join(folder, f) for f in os.listdir(folder) if f.endswith('.mp3')]
+            audio_files = [os.path.join(folder, f) for f in os.listdir(folder) if f.endswith('.ogg')]
             if not audio_files:
-                print(f"No mp3 files found in folder '{folder}'.")
+                print(f"No ogg files found in folder '{folder}'.")
                 continue
             transcribe_audio_files(audio_files, config, whisper_config)
 
