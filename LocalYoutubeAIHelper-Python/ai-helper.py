@@ -16,13 +16,6 @@ except ImportError:
     os.system(f"{sys.executable} -m pip install srt")
     import srt
 
-try:
-    from pydub import AudioSegment
-except ImportError:
-    print("The 'pydub' library is not installed. Installing now...")
-    os.system(f"{sys.executable} -m pip install pydub")
-    from pydub import AudioSegment
-
 # Set the desired audio bitrate for downloaded MP3 files
 AUDIO_BITRATE = '12k'  # You can adjust this value as needed
 
