@@ -1,3 +1,4 @@
-openai_api_key=.
+openai_api_key={INSERT_YOUR_KEY_HERE}
 model=chatgpt-4o-latest
 max_tokens=16000
+temperature=0.5
