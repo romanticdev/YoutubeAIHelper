@@ -213,25 +213,36 @@ def transcribe_audio_files(audio_files, config, whisper_config):
         chunks = split_audio_file(audio_file)
         output_dir = os.path.dirname(audio_file)
         transcripts_srt = []
+        word_srt =[]
 
         with concurrent.futures.ThreadPoolExecutor() as executor:
             futures = [executor.submit(transcribe_chunk, chunk, whisper_config, config) for chunk in chunks]
             for future in concurrent.futures.as_completed(futures):
                 result = future.result()
                 transcripts_srt.extend(result['srt'])  # result['srt'] is a list of srt.Subtitle objects
-
+                word_srt.extend(result['word_srt'])
         # Combine and write SRT transcripts
         # Sort subtitles by start time
         transcripts_srt.sort(key=lambda x: x.start)
+        word_srt.sort(key=lambda x: x.start)
         # Re-number subtitles
         for i, subtitle in enumerate(transcripts_srt, 1):
+            subtitle.index = i
+
+        for i, subtitle in enumerate(word_srt, 1):
             subtitle.index = i
         # Generate SRT content
         full_transcript_srt = srt.compose(transcripts_srt)
 
+        full_transcript_word_srt = srt.compose(word_srt)
+
         transcript_file_temp_srt = os.path.join(output_dir, 'transcript.temp.srt')
+        transcript_file_word_srt = os.path.join(output_dir, 'transcript.word.srt')
         with open(transcript_file_temp_srt, 'w', encoding='utf-8') as f:
             f.write(full_transcript_srt)
+
+        with open(transcript_file_word_srt, 'w', encoding='utf-8') as f:
+            f.write(full_transcript_word_srt)
 
         # TODO :: Clean up the transcript only if there are multiple chunks
         cleaned_transcript_srt = full_transcript_srt        
@@ -261,13 +272,15 @@ def transcribe_chunk(chunk, whisper_config, config):
     start_time_ms = chunk['start_time']
     is_temp = chunk['is_temp']
     transcripts = transcribe_with_whisper_api(audio_file, openai_api_key, whisper_config)
-    srt_content = transcripts['srt']
+    srt_content = transcripts['segment_srt']
+    word_content = transcripts['word_srt']
     # Adjust SRT timings
     adjusted_subtitles = adjust_srt_timestamps(srt_content, start_time_ms)
+    adjusted_word_subtitles = adjust_srt_timestamps(word_content, start_time_ms)
     # Remove chunk file if it's a temporary split
     if is_temp:
         os.remove(audio_file)
-    return { 'srt': adjusted_subtitles}
+    return { 'srt': adjusted_subtitles, 'word_srt': adjusted_word_subtitles}
 
 def adjust_srt_timestamps(srt_content, start_time_ms):
     subtitles = list(srt.parse(srt_content))
@@ -299,6 +312,32 @@ def convert_srt_to_custom_format(srt_content):
     formatted_text = "\n".join(formatted_lines)
     return formatted_text, total_length_seconds
 
+def generate_segment_srt(segments):
+    srt_content = []
+    for i, segment in enumerate(segments):
+        start = format_time(segment.start)
+        end = format_time(segment.end)
+        text = segment.text.strip()
+        srt_content.append(f"{i + 1}\n{start} --> {end}\n{text}\n")
+    return ''.join(srt_content)
+
+def generate_word_srt(words):
+    srt_content = []
+    for i, word_info in enumerate(words):
+        start = format_time(word_info.start)
+        end = format_time(word_info.end)
+        text = word_info.word.strip()
+        srt_content.append(f"{i + 1}\n{start} --> {end}\n{text}\n")
+    return ''.join(srt_content)
+
+def format_time(seconds):
+    td = datetime.timedelta(seconds=seconds)
+    total_seconds = int(td.total_seconds())
+    hours, remainder = divmod(total_seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    milliseconds = td.microseconds // 1000
+    return f"{hours:02}:{minutes:02}:{seconds:02},{milliseconds:03}"
+
 def transcribe_with_whisper_api(audio_file, openai_api_key, whisper_config):
     # Initialize the OpenAI client
     client = openai.OpenAI(api_key=openai_api_key)
@@ -313,20 +352,34 @@ def transcribe_with_whisper_api(audio_file, openai_api_key, whisper_config):
         elif key in ['language', 'prompt', 'response_format', 'max_alternatives', 'profanity_filter']:
             params[key] = value
 
+    params["timestamp_granularities"]=["word","segment"]
+    params["response_format"] = "verbose_json"
+
     try:
         with open(audio_file, 'rb') as f:
             print(f"Sending audio file '{audio_file}' to Whisper API for transcription...")
-            
-            # Use the new API structure
+
+            # Use the OpenAI API to transcribe the audio file
             response = client.audio.transcriptions.create(
                 file=f,
                 model="whisper-1",
-                response_format='srt',  # Transcribe in SRT format
                 **params
             )
-            transcripts['srt'] = response  # Save SRT response
 
-        return transcripts
+            # Parse the JSON response
+            transcription = response
+
+            # Generate segment-based SRT
+            segment_srt = generate_segment_srt(transcription.segments)
+
+            # Generate word-based SRT
+            word_srt = generate_word_srt(transcription.words)
+
+            return {
+                'segment_srt': segment_srt,
+                'word_srt': word_srt
+            }
+
     except Exception as e:
         print(f"Error transcribing audio file '{audio_file}': {e}")
         sys.exit(1)

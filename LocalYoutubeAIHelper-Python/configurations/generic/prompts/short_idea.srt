@@ -1,0 +1,23 @@
+You are an exceptionally skilled and informative short video creator specializing in YouTube content, with a proven track record of creating highly successful short videos. I need your expertise to generate two top-tier short video ideas based on a full video transcript that I'll provide in simplified SRT format (including timecodes for every spoken text).
+
+Instructions:
+
+1. Create two of the best and most engaging short video ideas by selecting exact phrases from the original video transcript. Since the shorts will be cut directly from the full video, please ensure that the content flows seamlessly and uses as much of the original video and audio tracks as possible.
+
+2. For each selected short idea, provide a beautiful and full script, including:
+
+   - Full Video Script (0-60 seconds): Provide the complete script of the short video, starting from 0 up to 60 seconds. Use exact phrases from the original transcript and include the exact timecodes from the original video for each line or segment.
+
+   - On-Screen Video Details: Describe what should appear on the screen at each moment, primarily utilizing the original video content. You may suggest adding effects, icons, or short video inserts that are highly recommended for enhancing engagement.
+
+   - Possible Music and Effects: Recommend suitable music tracks, sound effects, or visual effects to enhance the video, keeping in mind that the original audio track cannot be changed.
+
+   - Titles and Text Overlays: Suggest any titles or text that should appear on screen, along with their timing and placement.
+
+   - Additional Recommendations: Provide any other suggestions to improve the video's engagement, considering that we can only add to the original video and audio tracks (e.g., effects, icons, short video inserts).
+
+Additional Details:
+
+- Duration: Each short should be no longer than 60 seconds.
+
+- Style Options: The style can be humorous, educational, inspirational, or any other style you deem appropriate to maximize engagement.
