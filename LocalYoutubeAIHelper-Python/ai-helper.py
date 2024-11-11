@@ -128,10 +128,14 @@ def download_youtube_video(url, output_dir):
 
         # Download the original audio (e.g., webm or m4a) using yt-dlp
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
+            result = ydl.download([url])
 
-        # Locate the downloaded audio file (e.g., .webm or .m4a)
-        original_audio_path = os.path.join(video_folder, f"{sanitized_title}.webm")
+            # Get the downloaded file's information
+            info_dict = ydl.extract_info(url, download=False)
+            actual_ext = info_dict.get('ext', 'webm')  # Get the actual extension used
+
+        # Locate the downloaded audio file with the correct extension
+        original_audio_path = os.path.join(video_folder, f"{sanitized_title}.{actual_ext}")
         ogg_file = os.path.join(video_folder, f"{sanitized_title}.ogg")
 
         # Convert original audio to ogg using ffmpeg with specified parameters
