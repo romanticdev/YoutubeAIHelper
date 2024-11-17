@@ -1,0 +1,132 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "properties": {
+        "short_videos": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string"
+                    },
+                    "script": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "start_time": {
+                                    "type": "string"
+                                },
+                                "end_time": {
+                                    "type": "string"
+                                },
+                                "text": {
+                                    "type": "string"
+                                },
+                                "original_timecodes": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "string"
+                                    }
+                                }
+                            },
+                            "required": [
+                                "start_time",
+                                "end_time",
+                                "text",
+                                "original_timecodes"
+                            ],
+                            "additionalProperties": false
+                        }
+                    },
+                    "on_screen_details": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "start_time": {
+                                    "type": "string"
+                                },
+                                "end_time": {
+                                    "type": "string"
+                                },
+                                "description": {
+                                    "type": "string"
+                                }
+                            },
+                            "required": [
+                                "start_time",
+                                "end_time",
+                                "description"
+                            ],
+                            "additionalProperties": false
+                        }
+                    },
+                    "music_and_effects": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "time": {
+                                    "type": "string"
+                                },
+                                "description": {
+                                    "type": "string"
+                                }
+                            },
+                            "required": [
+                                "time",
+                                "description"
+                            ],
+                            "additionalProperties": false
+                        }
+                    },
+                    "titles_and_overlays": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "start_time": {
+                                    "type": "string"
+                                },
+                                "end_time": {
+                                    "type": "string"
+                                },
+                                "text": {
+                                    "type": "string"
+                                },
+                                "placement": {
+                                    "type": "string"
+                                }
+                            },
+                            "required": [
+                                "start_time",
+                                "end_time",
+                                "text",
+                                "placement"
+                            ],
+                            "additionalProperties": false
+                        }
+                    },
+                    "additional_recommendations": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "title",
+                    "script",
+                    "on_screen_details",
+                    "music_and_effects",
+                    "titles_and_overlays",
+                    "additional_recommendations"
+                ],
+                "additionalProperties": false
+            }
+        }
+    },
+    "required": [
+        "short_videos"
+    ],
+    "additionalProperties": false
+}

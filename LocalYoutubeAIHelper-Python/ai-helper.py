@@ -7,6 +7,7 @@ import openai
 import concurrent.futures
 import datetime
 import subprocess
+import json
 
 # Install the required libraries if not already installed
 try:
@@ -429,7 +430,11 @@ def clean_up_transcript(full_transcript_srt, config):
 
 def process_prompts_on_transcripts(folders, config):
     prompts_folder = config['prompts_folder']
-    prompt_files = [os.path.join(prompts_folder, f) for f in os.listdir(prompts_folder) if os.path.isfile(os.path.join(prompts_folder, f))]
+    prompt_files = [
+        os.path.join(prompts_folder, f)
+        for f in os.listdir(prompts_folder)
+        if os.path.isfile(os.path.join(prompts_folder, f)) and f.lower().endswith(('.txt', '.srt'))
+        ]
     if not prompt_files:
         print(f"Error: No prompt files found in '{prompts_folder}'.")
         sys.exit(1)
@@ -454,6 +459,41 @@ def process_prompts_on_transcripts(folders, config):
         for prompt_file in prompt_files:
             process_single_prompt(prompt_file, transcribed_file, folder, config)
 
+def generate_and_save_response(client, model, messages, temperature, max_tokens, top_p, response_format, output_extension, folder, prompt_name):
+    try:
+        # Generate the response using the OpenAI API
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=int(max_tokens),
+            top_p=top_p,
+            response_format=response_format
+        )
+        assistant_content = response.choices[0].message.content  # Use dot notation to access content
+
+        # Ensure unique output filename
+        output_filename = f"{prompt_name}{output_extension}"
+        output_file = os.path.join(folder, output_filename)
+        file_number = 1
+        while os.path.exists(output_file):
+            file_number += 1
+            output_filename = f"{prompt_name}.{file_number}{output_extension}"
+            output_file = os.path.join(folder, output_filename)
+
+        # Save the assistant's response
+        with open(output_file, 'w', encoding='utf-8') as f:
+            if '.json' in output_extension:
+                output_data = json.loads(assistant_content)
+                json.dump(output_data, f, indent=4)
+            else:
+                f.write(assistant_content)
+        print(f"Saved response to: {output_file}")
+
+    except Exception as e:
+        print(f"Error processing prompt '{prompt_name}': {e}")
+
+
 def process_single_prompt(prompt_file, transcribed_file, folder, config):
     # Read the prompt content from the file
     with open(prompt_file, 'r', encoding='utf-8') as f:
@@ -467,7 +507,7 @@ def process_single_prompt(prompt_file, transcribed_file, folder, config):
     client = openai.OpenAI(api_key=config['openai_api_key'])
     model = config['model']
     max_tokens = config['max_tokens']
-    temperature = float(config.get('temperature', 1.0))
+    temperature = float(config.get('temperature', 0.7))
     top_p = float(config.get('top_p', 1.0))
 
     # Use appropriate transcribed file based on extension
@@ -499,30 +539,38 @@ def process_single_prompt(prompt_file, transcribed_file, folder, config):
     ]
 
     try:
-        # Use the updated ChatCompletion API
-        response = client.chat.completions.create(
+        # Check for the presence of a corresponding JSON schema file
+        schema_file = os.path.join(os.path.dirname(prompt_file), f"{prompt_name}.schema.json")
+        if os.path.exists(schema_file):
+            # Load the JSON schema
+            with open(schema_file, 'r', encoding='utf-8') as f:
+                schema = json.load(f)
+
+            response_format = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": f"{prompt_name}_response",
+                    "schema": schema,
+                    "strict": True
+                }
+            }
+            output_extension = '.prompt.json'
+        else:
+            response_format = None
+            output_extension = '.prompt.txt'
+
+        generate_and_save_response(
+            client=client,
             model=model,
             messages=messages,
             temperature=temperature,
-            max_tokens=int(max_tokens),
-            top_p=top_p
+            max_tokens=max_tokens,
+            top_p=top_p,
+            response_format=response_format,
+            output_extension=output_extension,
+            folder=folder,
+            prompt_name=prompt_name
         )
-        assistant_content = response.choices[0].message.content  # Use dot notation to access content
-
-        # Ensure unique output filename
-        output_filename = f"{prompt_name}.prompt.txt"
-        output_file = os.path.join(folder, output_filename)
-        file_number = 1
-        while os.path.exists(output_file):
-            file_number += 1
-            output_filename = f"{prompt_name}.{file_number}.prompt.txt"
-            output_file = os.path.join(folder, output_filename)
-
-        # Save the assistant's response
-        with open(output_file, 'w', encoding='utf-8') as f:
-            f.write(assistant_content)
-        print(f"Saved response to: {output_file}")
-
     except Exception as e:
         print(f"Error processing prompt '{prompt_name}': {e}")
 
