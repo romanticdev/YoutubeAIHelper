@@ -5,9 +5,20 @@ import re
 import yt_dlp
 import openai
 import concurrent.futures
+import multiprocessing
 import datetime
 import subprocess
 import json
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from google.auth.transport.requests import Request
+from googleapiclient.discovery import build
+
+TOKEN_FILE = 'token.json'
+CLIENT_SECRET_FILE = 'client_secret_878642139292-8put57tbnlji1ut0f011lqpb2sq5bpda.apps.googleusercontent.com.json'  
+SCOPES = ['https://www.googleapis.com/auth/youtube.force-ssl']
+
+
 
 # Install the required libraries if not already installed
 try:
@@ -19,6 +30,25 @@ except ImportError:
 
 # Set the desired audio bitrate for downloaded MP3 files
 AUDIO_BITRATE = '12k'  # You can adjust this value as needed
+
+# Authenticate to YouTube API
+def authenticate_youtube():
+    creds = None
+
+    if os.path.exists(TOKEN_FILE):
+        creds = Credentials.from_authorized_user_file(TOKEN_FILE, SCOPES)
+
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file(CLIENT_SECRET_FILE, SCOPES)
+            creds = flow.run_local_server(port=0)
+
+        with open(TOKEN_FILE, 'w') as token:
+            token.write(creds.to_json())
+
+    return build('youtube', 'v3', credentials=creds)
 
 def extract_text_from_srt(srt_content):
     """
@@ -54,6 +84,11 @@ def parse_arguments():
     # Subparser for processing prompts on transcribed files
     parser_prompts = subparsers.add_parser('process_prompts', help='Process prompts on transcribed files')
     parser_prompts.add_argument('folders', nargs='+', help='Folders containing transcribed files')
+
+    # New Subparser for updating YouTube videos
+    parser_update = subparsers.add_parser('update_youtube', help='Update YouTube videos based on folder details')
+    parser_update.add_argument('folder', help='Folder containing file_details.txt and optional title/description/keywords files')
+
 
     return parser.parse_args()
 
@@ -103,9 +138,29 @@ def load_config(config_folder):
 def sanitize_filename(filename):
     return "".join(c for c in filename if c.isalnum() or c in (' ', '.', '_', '-')).strip()
 
-def download_youtube_video(url, output_dir):
+def is_youtube_url(url):
+    # Simple regex to check if the input is a valid YouTube URL
+    youtube_url_pattern = re.compile(
+        r'^(https?://)?(www\.)?(youtube\.com|youtu\.be)/.+$'
+    )
+    return bool(youtube_url_pattern.match(url))
+
+def download_youtube_video(url_or_id, output_dir):
     try:
-        print(f"Downloading video from URL: {url}")
+        # Determine if input is a full URL or just a video ID
+        if not is_youtube_url(url_or_id):
+            # Assume it's a video ID and construct a URL
+            video_id = url_or_id
+            url = f"https://www.youtube.com/watch?v={video_id}"
+        else:
+            url = url_or_id
+            video_id = extract_youtube_id(url)
+        
+        if not video_id:
+            print("Error: Could not extract a valid YouTube video ID.")
+            sys.exit(1)
+
+        print(f"Downloading video from URL/ID: {url} / {video_id}")
         ydl_opts_info = {'quiet': True}
 
         # Extract info for title and sanitization
@@ -119,6 +174,12 @@ def download_youtube_video(url, output_dir):
         # Create directory for downloaded files
         video_folder = os.path.join(output_dir, sanitized_title)
         os.makedirs(video_folder, exist_ok=True)
+
+        # Save the YouTube video ID to file_details.txt
+        file_details_path = os.path.join(video_folder, 'file_details.txt')
+        with open(file_details_path, 'w') as file_details:
+            file_details.write(f"youtube_id={video_id}\n")
+        print(f"Saved YouTube ID to {file_details_path}")
 
         # yt-dlp options to download the original audio format (webm/m4a)
         ydl_opts = {
@@ -182,6 +243,14 @@ def get_audio_duration(file_path):
     except Exception as e:
         print(f"Error retrieving audio duration: {e}")
         return None
+
+def extract_youtube_id(url):
+    # Enhanced regex to handle standard, shortened, and embedded YouTube URLs
+    youtube_id_pattern = re.compile(
+        r'(?:v=|\/|be\/|embed\/|shorts\/|youtu\.be\/|\/v\/|\/e\/|watch\?v=|&v=|youtu\.be\/|v\/|\/watch\?v=|youtube\.com\/watch\?v=|embed\/|watch\?.*&v=|\/embed\/|\/v\/)([0-9A-Za-z_-]{11})'
+    )
+    match = youtube_id_pattern.search(url)
+    return match.group(1) if match else None       
 
 def split_audio_file(file_path, chunk_length_ms=4 * 60 * 60 * 1000, overlap_ms=10000):
     # Check the file size and skip splitting if under 24.8 MB
@@ -320,18 +389,18 @@ def convert_srt_to_custom_format(srt_content):
 def generate_segment_srt(segments):
     srt_content = []
     for i, segment in enumerate(segments):
-        start = format_time(segment.start)
-        end = format_time(segment.end)
-        text = segment.text.strip()
+        start = format_time(segment['start'])
+        end = format_time(segment['end'])
+        text = segment['text'].strip()
         srt_content.append(f"{i + 1}\n{start} --> {end}\n{text}\n")
     return ''.join(srt_content)
 
 def generate_word_srt(words):
     srt_content = []
     for i, word_info in enumerate(words):
-        start = format_time(word_info.start)
-        end = format_time(word_info.end)
-        text = word_info.word.strip()
+        start = format_time(word_info['start'])
+        end = format_time(word_info['end'])
+        text = word_info['word'].strip()
         srt_content.append(f"{i + 1}\n{start} --> {end}\n{text}\n")
     return ''.join(srt_content)
 
@@ -427,6 +496,40 @@ def clean_up_transcript(full_transcript_srt, config):
         print(f"Error cleaning up transcript: {e}")
         sys.exit(1)
 
+def load_variable_content(variable_name, folder):
+    """
+    Load the content of the file with the largest number in '{{variable}}.prompt.{{number}}.txt'.
+    Treat '{{variable}}.prompt.txt' as having number 0.
+    """
+    # Initialize variable files list, treating the default file without a number as number 0
+    variable_files = []
+    default_file = os.path.join(folder, f"{variable_name}.prompt.txt")
+    
+    if os.path.exists(default_file):
+        variable_files.append((default_file, 0))  # Treat as number 0
+
+    # Search for numbered files
+    pattern = re.compile(rf"{variable_name}\.(\d+)\.prompt\.txt$")
+    
+    for file_name in os.listdir(folder):
+        match = pattern.match(file_name)
+        if match:
+            file_number = int(match.group(1))
+            file_path = os.path.join(folder, file_name)
+            variable_files.append((file_path, file_number))
+
+    if not variable_files:
+        return None
+
+    # Select the file with the highest number
+    file_with_largest_number = max(variable_files, key=lambda x: x[1])[0]
+
+    #print(f"we choose {file_with_largest_number} from {variable_files}")
+    
+    with open(file_with_largest_number, 'r', encoding='utf-8') as file:
+        return file.read()
+    
+
 
 def process_prompts_on_transcripts(folders, config):
     prompts_folder = config['prompts_folder']
@@ -456,8 +559,51 @@ def process_prompts_on_transcripts(folders, config):
             transcribed_file['llmsrt'] = transcript_llmsrt
 
         print(f"Processing prompts on transcripts in folder: {folder}")
-        for prompt_file in prompt_files:
-            process_single_prompt(prompt_file, transcribed_file, folder, config)
+        # Track generated files
+        generated_files = []
+
+        # Use multiprocessing to process each prompt in parallel
+        with multiprocessing.Pool(processes=multiprocessing.cpu_count()) as pool:
+            tasks = [
+                pool.apply_async(
+                    process_single_prompt,
+                    args=(prompt_file, transcribed_file, folder, config)
+                ) for prompt_file in prompt_files
+            ]
+            for task in tasks:
+                result = task.get()
+                if result:
+                    generated_files.append(result)
+
+        # Substitute variables in the generated files after all prompts are processed
+        substitute_variables_in_files(folder, generated_files)
+
+def substitute_variables_in_files(folder, generated_files):
+    """
+    Substitute '{{variable}}' in the specified generated files with the corresponding prompt content.
+    """
+    # Iterate only over generated files
+    for file_name in generated_files:
+        file_path = os.path.join(folder, file_name)
+        with open(file_path, 'r', encoding='utf-8') as file:
+            content = file.read()
+
+        updated = False
+
+        # Replace {{variable}} placeholders
+        for variable_name in re.findall(r'{{(.*?)}}', content):
+            replacement = load_variable_content(variable_name, folder)
+            if replacement:
+                updated = True
+                print(f"Variable {variable_name} was found for file {file_name}")
+                content = content.replace(f'{{{{{variable_name}}}}}', replacement)
+
+        if updated:
+            # Save the updated content back to the file
+            with open(file_path, 'w', encoding='utf-8') as file:
+                file.write(content)
+            print(f"Variables substituted in: {file_path}")
+
 
 def generate_and_save_response(client, model, messages, temperature, max_tokens, top_p, response_format, output_extension, folder, prompt_name):
     try:
@@ -489,7 +635,7 @@ def generate_and_save_response(client, model, messages, temperature, max_tokens,
             else:
                 f.write(assistant_content)
         print(f"Saved response to: {output_file}")
-
+        return output_filename  # Return the output filename
     except Exception as e:
         print(f"Error processing prompt '{prompt_name}': {e}")
 
@@ -559,7 +705,7 @@ def process_single_prompt(prompt_file, transcribed_file, folder, config):
             response_format = None
             output_extension = '.prompt.txt'
 
-        generate_and_save_response(
+        generated_file = generate_and_save_response(
             client=client,
             model=model,
             messages=messages,
@@ -571,8 +717,170 @@ def process_single_prompt(prompt_file, transcribed_file, folder, config):
             folder=folder,
             prompt_name=prompt_name
         )
+        return generated_file  # Return the generated file name
     except Exception as e:
         print(f"Error processing prompt '{prompt_name}': {e}")
+
+def get_youtube_id_from_file(file_path):
+    """
+    Extracts the YouTube ID from file_details.txt.
+    """
+    with open(file_path, 'r') as file:
+        for line in file:
+            if line.startswith('youtube_id='):
+                return line.split('=')[1].strip()
+    return None
+
+def get_video_details(video_id):
+    """
+    Retrieves video details from YouTube.
+    """
+    youtube = authenticate_youtube()
+
+    request = youtube.videos().list(
+        part='snippet,contentDetails,statistics,status,liveStreamingDetails',
+        id=video_id
+    )
+
+    response = request.execute()
+    if response['items']:
+        return response['items'][0]  # Return the first (and only) item
+    return None
+
+def update_video(video_id, title=None, description=None, tags=None, category_id=None):
+    """
+    Updates the video details on YouTube.
+    """
+    youtube = authenticate_youtube()
+
+    # Fetch current video details to get the existing category if not provided
+    current_video_details = get_video_details(video_id)
+    if not current_video_details:
+        print(f"Error: Unable to retrieve current video details for video ID '{video_id}'.")
+        return
+
+    # Use the existing category if not provided
+    if not category_id:
+        category_id = current_video_details['snippet'].get('categoryId', '22')  # Default to '22' (People & Blogs)
+
+    # Prepare the request body
+    snippet_body = {
+        'id': video_id,
+        'snippet': {
+            'categoryId': category_id
+        }
+    }
+    
+    # Only update fields if values are provided
+    if title:
+        snippet_body['snippet']['title'] = title
+    else:
+        snippet_body['snippet']['title'] = current_video_details['snippet']['title']
+    
+    if description:
+        snippet_body['snippet']['description'] = description
+    else:
+        snippet_body['snippet']['description'] = current_video_details['snippet']['description']
+    
+    if tags:
+        snippet_body['snippet']['tags'] = tags
+    else:
+        snippet_body['snippet']['tags'] = current_video_details['snippet'].get('tags', [])
+
+    # Update the video with the new snippet
+    request = youtube.videos().update(
+        part='snippet',
+        body=snippet_body
+    )
+
+    response = request.execute()
+    print(f"Video updated successfully: {response['snippet']['title']}")
+
+def limit_tags_to_500_chars(tags_string):
+    """
+    Limit the total length of a tags string to no more than 500 characters.
+    The tags are expected to be in the format: 'tag1, tag2, tag3, ...'.
+    This function will ensure words are not cut off and the total length does not exceed 500 characters.
+    
+    Parameters:
+        tags_string (str): A string of tags separated by commas.
+
+    Returns:
+        str: A trimmed string of tags not exceeding 500 characters.
+    """
+    # Split the tags by commas and remove leading/trailing spaces from each tag
+    tags_list = [tag.strip() for tag in tags_string.split(',')]
+    
+    # Initialize variables to keep track of length and result tags
+    result_tags = []
+    current_length = 0
+
+    for tag in tags_list:
+        # Calculate the length of the tag plus the comma (if it's not the first tag)
+        if result_tags:
+            tag_length = len(tag) + 1  # for the comma (no space)
+        else:
+            tag_length = len(tag)  # no comma before the first tag
+        
+        # Check if adding this tag would exceed the 500 character limit
+        if current_length + tag_length > 500:
+            break
+        # it will use double quotation mark if tag has a space
+        if ' ' in tag:
+            tag_length+=2
+
+        # Add the tag to the result and update the current length
+        result_tags.append(tag)
+        current_length += tag_length
+        
+    # print (f"Length is {current_length}")
+    # Join the tags back into a single string, no extra spaces
+    return ','.join(result_tags)
+
+
+def process_update_youtube(folder):
+    """
+    Process the update_youtube mode using the specified folder.
+    """
+    file_details_path = os.path.join(folder, 'file_details.txt')
+    if not os.path.exists(file_details_path):
+        print(f"Error: file_details.txt not found in '{folder}'.")
+        return
+
+    # Get YouTube ID from file_details.txt
+    youtube_id = get_youtube_id_from_file(file_details_path)
+    if not youtube_id:
+        print(f"Error: youtube_id not found in file_details.txt in '{folder}'.")
+        return
+    title = None
+    description = None
+    tags = None
+
+    title = load_variable_content('title',folder)
+    description = load_variable_content('description',folder)
+    tags = load_variable_content('keywords',folder)
+    if tags:
+        tags = limit_tags_to_500_chars(tags)
+
+    # Fetch the current video details
+    current_video_details = get_video_details(youtube_id)
+    if not current_video_details:
+        print(f"Error: Unable to retrieve video details for video ID '{youtube_id}'.")
+        return
+
+    # Use the current category ID if not updating it
+    category_id = current_video_details['snippet'].get('categoryId')
+
+    # Update video properties based on available data
+    update_video(
+        youtube_id,
+        title=title or current_video_details['snippet']['title'],
+        description=description or current_video_details['snippet']['description'],
+        tags=tags or current_video_details['snippet'].get('tags', []),
+        category_id=category_id
+    )
+
+
 
 def get_total_length_from_llmsrt(llmsrt_content):
     last_line = llmsrt_content.strip().split('\n')[-1]
@@ -596,6 +904,8 @@ def main():
             transcribe_audio_files([audio_file], config, whisper_config)
             all_folders.append(video_folder)
         process_prompts_on_transcripts(all_folders, config)
+        for folder in all_folders:
+            process_update_youtube(folder)
 
     elif args.mode == 'download':
         output_dir = os.path.join(os.getcwd(), 'videos')
@@ -616,6 +926,9 @@ def main():
 
     elif args.mode == 'process_prompts':
         process_prompts_on_transcripts(args.folders, config)
+
+    elif args.mode == 'update_youtube':
+        process_update_youtube(args.folder)
 
 if __name__ == "__main__":
     main()

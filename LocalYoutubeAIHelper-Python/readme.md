@@ -49,13 +49,39 @@ To use OpenAI for transcription and LLM features, obtain an API key:
 4. Click 'Create new secret key' to generate your API key.
 5. Copy the generated key to use in your configuration.
 
-Update `llm_config.txt` in the configuration folder:
+You have option to update `llm_config.txt` in the configuration folder if you are going to use different secrets for different configurations:
 
 ```txt
 model=chatgpt-4o-latest
 max_tokens=16000
 openai_api_key=your_api_key_here
 ```
+
+Or, create a local.env file along with main.py following the instructions below. So it will be automatically used with all of your configurations.
+
+#### Steps to Create and Populate `local.env`
+
+1. **Locate the File:**
+   - Ensure you have a file named `local.env` in the same directory as `main.py`.
+
+2. **Create the File (If It Doesn't Exist):**
+   - If `local.env` doesn't exist, create it manually or using the terminal:
+     ```bash
+     touch local.env
+     ```
+
+3. **Populate the File:**
+   Open the `local.env` file in your text editor and add the following environment variables:
+
+   ```plaintext
+   # OpenAI API Configuration
+   OPENAI_API_KEY=your-openai-api-key-here
+   ```
+   - Replace `your-openai-api-key-here` with your actual OpenAI API key. 
+4. **Save the File:**
+   - Save the file after adding the required variables. 
+5. **Verify the File:**
+   - Ensure that `local.env` is in the same directory as `main.py` to be automatically loaded.
 
 ### 4. Configure Prompts
 
@@ -126,6 +152,22 @@ To generate schema file locally you can use simple python script included into `
 
 For more detailed guidance on creating JSON Schemas, refer to the [OpenAI Cookbook on Structured Outputs](https://cookbook.openai.com/examples/structured_outputs_intro).
 
+#### 5. Setting Up Google API Credentials
+In case you are going to update your youtube videos directly you can do it by providing `--update-youtube` command line arg with `full-process` command, or by executing standalone process by executing `update-youtube` mode provding folder with downlaoded audio and prompts results.
+
+Below are the steps to create your credentials file:
+
+1. **Create a Google Cloud Project**:
+   - Visit [Google Cloud Console](https://console.cloud.google.com/).
+   - Create a new project for your YouTube application.
+2. **Enable YouTube API**:
+   - Navigate to "APIs & Services" > "Library" and enable "YouTube Data API v3."
+3. **Generate OAuth 2.0 Credentials**:
+   - Go to "APIs & Services" > "Credentials" and click "Create Credentials" > "OAuth 2.0 Client IDs."
+   - Choose **Desktop App** or **Other**.
+   - Download the credentials file and save it as `client_secret_yotube.json` in the main folder along with main.py file.
+4. **Authenticate Your Application**:
+   - Run the script for the first time to authenticate. This will generate a `token.json` file for accessing your YouTube channel.
 
 ## Usage
 
