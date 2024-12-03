@@ -1,4 +1,5 @@
 openai==1.50.0
+httpx==0.27.2
 requests==2.32.3
 yt-dlp==2024.11.18
 srt==3.5.1
