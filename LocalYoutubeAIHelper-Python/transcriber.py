@@ -3,9 +3,11 @@ import concurrent.futures
 import datetime
 import srt
 import json
-import openai
+import subprocess
+from ai_client import AIClient
 from utilities import setup_logging, ensure_directory_exists, load_file_content, save_file_content
 from config import CONFIG
+from tenacity import retry, wait_random_exponential, stop_after_attempt
 
 logger = setup_logging()
 
@@ -21,7 +23,7 @@ class Transcriber:
         self.config = config
         self.whisper_config = whisper_config
         self.whisper_config['timestamp_granularities'] = ['word', 'segment']  # Ensure both word and segment levels
-        openai.api_key = config['openai_api_key']
+        self.client = AIClient(self.config,self.whisper_config)
 
     def transcribe_audio_files(self, audio_files):
         """
@@ -65,7 +67,135 @@ class Transcriber:
             logger.warning(f"No audio files found in folder: {folder}")
             return
         self.transcribe_audio_files(audio_files)
+        
+    def improve_transcription(self, folder):
+        """
+        Improve transcription of SRT files in a specified folder.
 
+        Args:
+            folder (str): Path to the folder containing audio files.
+        """
+        logger.info(f"Improving transcription for folder: {folder}")
+        transcript_file =  os.path.join(folder, 'transcript.srt')
+        srt_files= []
+        if os.path.isfile(transcript_file):
+            srt_files = [transcript_file]
+        if not srt_files:
+            logger.warning(f"No SRT files found in folder: {folder}")
+            return
+        self.improve_transcription_file(srt_files)
+    
+    def split_srt_file(self, srt_content, max_subtitles=350):
+        """
+        Splits the SRT content into chunks to avoid exceeding the token limit.
+
+        Args:
+            srt_content (str): The content of the SRT file.
+            max_subtitles (int): Maximum number of subtitles per chunk.
+
+        Returns:
+            List[List[srt.Subtitle]]: A list of lists containing srt.Subtitle objects.
+        """
+        subtitles = list(srt.parse(srt_content))
+        chunks = []
+        for i in range(0, len(subtitles), max_subtitles):
+            chunk = subtitles[i:i + max_subtitles]
+            chunks.append(chunk)
+        return chunks
+
+       
+    @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6)) 
+    def improve_transcription_file(self, srt_files):
+        """
+        Improves transcription of SRT files by correcting grammatical errors and punctuation.
+        """
+        
+        ## TODO
+        ## - divide input srt file into chunks and improve each chunk and than combines them back
+        ## - allow custom model to execute improve-srt action
+        ## - support prompt or prompt file as input for the prompt.
+
+        for srt_file in srt_files:
+            logger.info(f"Improving transcription in file: {srt_file}")
+            output_dir = os.path.dirname(srt_file)
+            original_srt_content = load_file_content(srt_file)
+
+            prompt_content = self.whisper_config.get('improve_srt_content', '')
+            if not prompt_content:
+                logger.error("We don't have 'improve_srt_content' in whisper_config.txt to process")
+                return
+            
+            # Split the SRT content into manageable chunks
+            subtitle_chunks = self.split_srt_file(original_srt_content)
+            logger.info(f"Divided SRT file into {len(subtitle_chunks)} chunks for processing.")
+            corrected_subtitles = []
+            
+            for chunk_index, chunk_subtitles in enumerate(subtitle_chunks):
+                logger.info(f"Sending for improvement {(chunk_index+1)} part")
+                chunk_srt_content = srt.compose(chunk_subtitles)
+                
+                messages = [
+                    {"role": "system", "content": prompt_content},
+                    {"role": "user", "content": chunk_srt_content},
+                ]
+
+                response = self.client.create_chat_completion(
+                    messages=messages
+                    ) 
+                
+                assistant_content = response.choices[0].message.content
+
+                # Parse the corrected chunk and add to the list
+                corrected_chunk_subtitles = list(srt.parse(assistant_content))
+                corrected_subtitles.extend(corrected_chunk_subtitles)
+
+            # Re-index subtitles
+            for i, subtitle in enumerate(corrected_subtitles, 1):
+                subtitle.index = i
+
+            # Compose the full corrected SRT content
+            corrected_srt_content = srt.compose(corrected_subtitles)
+            
+            # Define file paths
+            transcript_srt = os.path.join(output_dir, 'transcript.srt')
+            transcript_txt = os.path.join(output_dir, 'transcript.txt')
+            transcript_llmsrt = os.path.join(output_dir, 'transcript.llmsrt')
+
+            # Backup original files if they exist
+            self.backup_file(transcript_srt, 'transcript.original.srt')
+            self.backup_file(transcript_txt, 'transcript.original.txt')
+            self.backup_file(transcript_llmsrt, 'transcript.original.llmsrt')
+
+            # Save the new transcript.srt
+            with open(transcript_srt, 'w', encoding='utf-8') as f:
+                f.write(corrected_srt_content)
+            logger.info(f"Saved improved transcription to: {transcript_srt}")
+
+            # Generate and save transcript.txt and transcript.llmsrt
+            text_content = " ".join(subtitle.content for subtitle in corrected_subtitles)
+            llmsrt_content = self.convert_to_llmsrt(corrected_subtitles)
+
+            with open(transcript_txt, 'w', encoding='utf-8') as f:
+                f.write(text_content)
+            logger.info(f"Saved text transcript to: {transcript_txt}")
+
+            with open(transcript_llmsrt, 'w', encoding='utf-8') as f:
+                f.write(llmsrt_content)
+            logger.info(f"Saved LLM-friendly transcript to: {transcript_llmsrt}")
+
+    def backup_file(self, original_path, backup_filename):
+        """
+        Creates a backup of the original file if it exists.
+
+        Args:
+            original_path (str): Path to the original file.
+            backup_filename (str): Name of the backup file.
+        """
+        if os.path.isfile(original_path):
+            backup_path = os.path.join(os.path.dirname(original_path), backup_filename)
+            os.rename(original_path, backup_path)
+            logger.info(f"Backed up '{original_path}' to '{backup_path}'")
+            
     def transcribe_chunk(self, chunk):
         """
         Transcribes a single audio chunk using Whisper API.
@@ -76,15 +206,17 @@ class Transcriber:
         Returns:
             dict: Dictionary containing segment-level and word-level transcripts.
         """
-        try:
-            client = openai.OpenAI(api_key=self.config['openai_api_key'])
-
+        try:   
+            response = None         
+            valid_params = {"file", "model", "prompt", "response_format", "temperature", "language","timestamp_granularities"}
+            # Filter the whisper_config dictionary to include only valid parameters
+            filtered_whisper_config = {k: v for k, v in self.whisper_config.items() if k in valid_params}
+            
             with open(chunk['file_path'], 'rb') as audio_file:
                 logger.info(f"Sending chunk to Whisper API: {chunk['file_path']}")
-                response = client.audio.transcriptions.create(
-                    file=audio_file,
-                    model="whisper-1",
-                    **self.whisper_config
+                response = self.client.transcribe_audio(
+                    audio_file=audio_file,
+                    **filtered_whisper_config
                 )
                 result = self.process_whisper_response(response, chunk['start_time'])
                 if chunk['is_temp']:

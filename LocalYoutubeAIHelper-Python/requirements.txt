@@ -1,9 +1,10 @@
 openai==1.50.0
 requests==2.32.3
-yt-dlp==2024.8.6
+yt-dlp==2024.11.18
 srt==3.5.1
 genson==1.3.0
 python-dotenv==1.0.1
+tenacity==9.0.0
 
 # Google API related libraries
 google-auth==2.23.4

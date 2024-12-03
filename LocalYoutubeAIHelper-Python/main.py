@@ -24,7 +24,8 @@ def parse_arguments():
     parser_full = subparsers.add_parser('full-process', help="Download, transcribe, and process prompts")
     parser_full.add_argument('urls', nargs='+', help="YouTube URLs to process")
     parser_full.add_argument('--update-youtube', action='store_true', help="Update YouTube videos after processing (default: False)")
-
+    parser_full.add_argument('--disable-improve-srt', action='store_true', help="Disable automatic improvement of transcribed SRT (default: False)", default=False)
+    
     # Download YouTube videos
     parser_download = subparsers.add_parser('download', help="Download YouTube videos")
     parser_download.add_argument('urls', nargs='+', help="YouTube URLs to download")
@@ -32,6 +33,10 @@ def parse_arguments():
     # Transcribe audio files
     parser_transcribe = subparsers.add_parser('transcribe', help="Transcribe local audio files")
     parser_transcribe.add_argument('folders', nargs='+', help="Folders containing MP3 files to transcribe")
+
+    #Improve transcript
+    parser_improve_transcript = subparsers.add_parser('improve-srt',help="Improve automatically transcribed SRT")
+    parser_improve_transcript.add_argument('folders', nargs='+', help="Folders containing transcribed files")
 
     # Process prompts on transcriptions
     parser_prompts = subparsers.add_parser('process-prompts', help="Process prompts on transcribed files")
@@ -70,6 +75,11 @@ def main():
             logger.info(f"Processing URL: {url}")
             audio_file, video_folder, title = downloader.download_youtube_video(url, output_dir)
             transcriber.transcribe_audio_files([audio_file])
+            
+            improve_srt = not args.disable_improve_srt
+            if improve_srt:
+                transcriber.improve_transcription(video_folder)
+            
             prompt_processor.process_prompts_on_transcripts([video_folder])
 
             if args.update_youtube:
@@ -84,6 +94,10 @@ def main():
     elif args.mode == 'transcribe':
         for folder in args.folders:
             transcriber.transcribe_folder(folder)
+            
+    elif args.mode == 'improve-srt':
+        for folder in args.folders:
+            transcriber.improve_transcription(folder)
 
     elif args.mode == 'process-prompts':
         prompt_processor.process_prompts_on_transcripts(args.folders)
