@@ -7,7 +7,6 @@ import subprocess
 from ai_client import AIClient
 from utilities import setup_logging, ensure_directory_exists, load_file_content, save_file_content
 from config import CONFIG
-from tenacity import retry, wait_random_exponential, stop_after_attempt
 
 logger = setup_logging()
 
@@ -102,9 +101,7 @@ class Transcriber:
             chunk = subtitles[i:i + max_subtitles]
             chunks.append(chunk)
         return chunks
-
        
-    @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6)) 
     def improve_transcription_file(self, srt_files):
         """
         Improves transcription of SRT files by correcting grammatical errors and punctuation.

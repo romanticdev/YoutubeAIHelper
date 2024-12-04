@@ -171,7 +171,7 @@ class PromptProcessor:
         # Generate the response using the OpenAI API
         response = self.client.create_chat_completion(
             messages=messages,           
-            #response_format=response_format
+            response_format=response_format
         )        
 
         assistant_content = response.choices[0].message.content

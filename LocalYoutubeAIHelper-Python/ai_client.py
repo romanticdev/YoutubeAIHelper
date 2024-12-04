@@ -1,5 +1,5 @@
 from openai import AzureOpenAI
-from openai import OpenAI
+from openai import OpenAI, RateLimitError
 from tenacity import retry, wait_random_exponential, stop_after_attempt
 from utilities import setup_logging
 
@@ -37,7 +37,11 @@ class AIClient:
             logger.info(f"Successfully initialized OpenAI client")
 
 
-    @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
+    @retry(
+    wait=wait_random_exponential(min=1, max=60),
+    stop=stop_after_attempt(6),
+    retry=retry_if_exception_type(RateLimitError)
+    )
     def create_chat_completion(self, messages, **kwargs):
         if self.use_azure:
             return self.client.chat.completions.create(
@@ -59,7 +63,11 @@ class AIClient:
                 response_format=kwargs.get('response_format',None)
             )
                 
-    @retry(wait=wait_random_exponential(min=1, max=60), stop=stop_after_attempt(6))
+    @retry(
+    wait=wait_random_exponential(min=1, max=60),
+    stop=stop_after_attempt(6),
+    retry=retry_if_exception_type(RateLimitError)
+    )
     def transcribe_audio(self, audio_file, **kwargs):
         if self.use_azure:
             return self.whisperclient.audio.transcriptions.create(
