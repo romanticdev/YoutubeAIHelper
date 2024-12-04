@@ -16,8 +16,9 @@ def parse_arguments():
     parser = argparse.ArgumentParser(
         description="A tool to download, transcribe, and process YouTube videos with AI prompts and updates."
     )
-    parser.add_argument('--config-folder', help="Path to configuration folder (default: 'configurations/generic')", 
-                        default='configurations/generic')
+    def_config_folder = CONFIG.get('default_config_folder','configurations/generic')
+    parser.add_argument('--config-folder', help=f"Path to configuration folder (default: '{def_config_folder}')", 
+                        default=def_config_folder)
     subparsers = parser.add_subparsers(dest='mode', required=True)
 
     # Full process: download, transcribe, and process prompts

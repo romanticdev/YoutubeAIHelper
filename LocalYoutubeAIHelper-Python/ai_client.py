@@ -1,6 +1,6 @@
 from openai import AzureOpenAI
 from openai import OpenAI, RateLimitError
-from tenacity import retry, wait_random_exponential, stop_after_attempt
+from tenacity import retry, wait_random_exponential, stop_after_attempt, retry_if_exception_type
 from utilities import setup_logging
 
 logger = setup_logging()
