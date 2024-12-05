@@ -3,6 +3,7 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
 from utilities import load_file_content, setup_logging, load_variable_content, limit_tags_to_500_chars
 from config import CONFIG
 
@@ -67,6 +68,32 @@ class YouTubeUpdater:
         except Exception as e:
             logger.error(f"Error retrieving video details: {e}")
             return None
+
+    def get_video_language(self, video_id):
+        """
+        Retrieves the language of a YouTube video.
+
+        Args:
+            video_id (str): YouTube video ID.
+
+        Returns:
+            str: The default language of the video (e.g., 'en'), or None if not set.
+        """
+        try:
+            request = self.service.videos().list(
+                part='snippet',
+                id=video_id
+            )
+            response = request.execute()
+            if response['items']:
+                video_snippet = response['items'][0]['snippet']
+                return video_snippet.get('defaultLanguage', None)  # Returns 'en', 'es', etc.
+            logger.error(f"No details found for video ID: {video_id}")
+            return None
+        except Exception as e:
+            logger.error(f"Error retrieving video language: {e}")
+            return None
+
 
     def update_video(self, video_id, title=None, description=None, tags=None, category_id=None):
         """
@@ -138,6 +165,46 @@ class YouTubeUpdater:
             tags=tags if tags else None,
             category_id=None  # Optionally, include category logic
         )
+
+        srt_file_path = os.path.join(folder, 'transcript.srt')
+        if os.path.exists(srt_file_path):
+            video_language = self.get_video_language(youtube_id) or 'en'
+            self.upload_subtitles(youtube_id, srt_file_path, video_language)
+
+    def upload_subtitles(self, video_id, srt_file_path, language):
+        """
+        Uploads subtitles to a YouTube video.
+
+        Args:
+            video_id (str): YouTube video ID.
+            srt_file_path (str): Path to the SRT file.
+            language (str): Language of the subtitles.
+        """
+        try:
+            # Remove existing captions
+            captions = self.service.captions().list(part='snippet', videoId=video_id).execute()
+            for caption in captions.get('items', []):
+                self.service.captions().delete(id=caption['id']).execute()
+                logger.info(f"Deleted caption: {caption['id']}")
+
+            # Upload new captions
+            media = MediaFileUpload(srt_file_path, mimetype='application/octet-stream')
+            request = self.service.captions().insert(
+                part='snippet',
+                body={
+                    'snippet': {
+                        'videoId': video_id,
+                        'language': language,
+                        'name': 'Subtitles',
+                        'isDraft': False
+                    }
+                },
+                media_body=media
+            )
+            response = request.execute()
+            logger.info(f"Subtitles uploaded successfully: {response['id']}")
+        except Exception as e:
+            logger.error(f"Error uploading subtitles: {e}")
 
     @staticmethod
     def get_youtube_id_from_file(file_path):
