@@ -78,6 +78,7 @@ CONFIG = {
     'log_level': LOG_LEVEL,
 }
 
+
 def resolve_path(path):
     """
     Resolves a given path to an absolute path. If the path is relative, it is made
