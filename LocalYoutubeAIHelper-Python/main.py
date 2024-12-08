@@ -23,7 +23,7 @@ def parse_arguments():
 
     # Full process: download, transcribe, and process prompts
     parser_full = subparsers.add_parser('full-process', help="Download, transcribe, and process prompts")
-    parser_full.add_argument('urls', nargs='+', help="YouTube URLs to process")
+    parser_full.add_argument('inputs', nargs='+', help="YouTube URLs, video IDs, or local file paths to process")
     parser_full.add_argument('--update-youtube', action='store_true', help="Update YouTube videos after processing (default: False)")
     parser_full.add_argument('--disable-improve-srt', action='store_true', help="Disable automatic improvement of transcribed SRT (default: False)", default=False)
     
@@ -72,20 +72,30 @@ def main():
         output_dir = os.path.join(os.getcwd(), 'videos')
         os.makedirs(output_dir, exist_ok=True)
 
-        for url in args.urls:
-            logger.info(f"Processing URL: {url}")
-            audio_file, video_folder, title = downloader.download_youtube_video(url, output_dir)
-            transcriber.transcribe_audio_files([audio_file])
+        for input_item in args.inputs:
+            if os.path.isfile(input_item):  # Check if the input is a local file
+                if not downloader.is_valid_media_file(input_item):
+                    logger.warning(f"Skipping invalid media file: {input_item}")
+                    continue                
+                logger.info(f"Processing local file: {input_item}")
+                video_folder = os.path.dirname(input_item)
+                file_name = os.path.splitext(os.path.basename(input_item))[0]
+                
+                # Convert to OGG
+                ogg_file_path = downloader.convert_to_ogg(input_item, video_folder, file_name)
+            else:
+                # Handle YouTube URLs or IDs
+                audio_file, video_folder, title = downloader.download_youtube_video(input_item, output_dir)
             
-            improve_srt = not args.disable_improve_srt
-            if improve_srt:
+            # Proceed with transcription and prompt processing
+            transcriber.transcribe_audio_files([os.path.join(video_folder, f) for f in os.listdir(video_folder) if f.endswith('.ogg')])
+            if not args.disable_improve_srt:
                 transcriber.improve_transcription(video_folder)
-            
             prompt_processor.process_prompts_on_transcripts([video_folder])
-
+            
             if args.update_youtube:
                 youtube_updater.process_update_youtube(video_folder)
-            
+                    
     elif args.mode == 'download':
         output_dir = os.path.join(os.getcwd(), 'videos')
         os.makedirs(output_dir, exist_ok=True)

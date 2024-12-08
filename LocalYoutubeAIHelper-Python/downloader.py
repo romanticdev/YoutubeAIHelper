@@ -15,6 +15,15 @@ class Downloader:
         self.audio_bitrate = config.get('audio_bitrate', '12k')
         self.output_dir = config.get('default_output_dir', 'output')
 
+    @staticmethod
+    def is_valid_media_file(file_path):
+        """
+        Check if the file is a valid media file by extension.
+        """
+        valid_extensions = ['.mp4', '.mkv', '.mp3', '.wav', '.webm']
+        _, ext = os.path.splitext(file_path)
+        return ext.lower() in valid_extensions
+    
     def download_youtube_video(self, url_or_id, output_dir=None):
         """
         Downloads a YouTube video, extracts audio, and converts it to OGG format.
