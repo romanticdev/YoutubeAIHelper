@@ -1,18 +1,22 @@
-Analyze the following transcript and create a YouTube chapter list. For each significant topic or idea, provide:
+ Analyze the following transcript and create a YouTube chapter list. For each significant topic or idea, provide:
 
-- The exact timestamp from the transcript where the topic begins.
-- A concise title that accurately represents the content.
+ - The exact timestamp from the transcript where the topic begins, formatted as `MM:SS` (e.g., `00:14` for 14 seconds or `14:00` for 14 minutes).
+ - A concise title that accurately represents the content.
 
-Ensure:
+ Ensure:
 
-- All timestamps are within the video's actual length.
-- Each title is informative and adds value for the viewer.
-- The list starts from 0:00 - Introduction.
+ - All timestamps are within the video's actual length and correctly formatted as `MM:SS`, not `M:SS`.
+ - Each title is informative and adds value for the viewer.
+ - The list starts with `0:00 - Introduction`.
 
-Format:
+ Format:
 
-- 0:00 - [Title]
-- [Timestamp] - [Title]
-- ...
+ - 0:00 - [Title]
+ - [MM:SS] - [Title]
+ - ...
 
-Transcript in SRT format:
+ Important: Pay attention to the distinction between minutes and seconds when analyzing the timestamps. For example:
+ - `00:14` corresponds to 14 seconds.
+ - `14:00` corresponds to 14 minutes.
+
+ Transcript in SRT format:
