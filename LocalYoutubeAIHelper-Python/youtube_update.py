@@ -4,8 +4,9 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
-from utilities import load_file_content, setup_logging, load_variable_content, limit_tags_to_500_chars
-from config import CONFIG
+from utilities import load_file_content, setup_logging,\
+load_variable_content, limit_tags_to_500_chars
+from config import CONFIG, resolve_path
 
 logger = setup_logging()
 
@@ -17,7 +18,7 @@ class YouTubeUpdater:
         Args:
             config (dict): General configuration settings.
         """
-        self.token_file = config['token_file']
+        self.token_file = resolve_path(config['token_file'])
         self.client_secret_file = config['client_secret_file']
         self.scopes = config['scopes']
         self.service = self.authenticate_youtube()
@@ -31,9 +32,11 @@ class YouTubeUpdater:
         """
         creds = None
         if os.path.exists(self.token_file):
+            logger.info(f"{self.token_file} is exists. Loading...")
             creds = Credentials.from_authorized_user_file(self.token_file, self.scopes)
 
         if not creds or not creds.valid:
+            logger.info(f"{self.token_file} is not exists. Creating ...")
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
             else:

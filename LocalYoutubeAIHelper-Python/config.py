@@ -13,7 +13,6 @@ load_dotenv(env_path)
 
 # YouTube API configuration
 SCOPES = ['https://www.googleapis.com/auth/youtube.force-ssl']
-TOKEN_FILE = os.getenv('TOKEN_FILE', 'token.json')
 CLIENT_SECRET_FILE = os.getenv('CLIENT_SECRET_FILE', 'client_secret_youtube.json')
 
 # OpenAI configuration
@@ -46,6 +45,7 @@ DEFAULT_OUTPUT_DIR = os.getenv('DEFAULT_OUTPUT_DIR', 'videos')
 DEFAULT_CONFIG_FOLDER = os.getenv('DEFAULT_CONFIG_FOLDER', 'configurations/generic')
 PROMPTS_FOLDER = os.path.join(DEFAULT_CONFIG_FOLDER, 'prompts')
 WHISPER_DEPLOYMENT = os.getenv('WHISPER_DEPLOYMENT','')
+TOKEN_FILE = os.path.join(DEFAULT_CONFIG_FOLDER, 'token.json')
 
 # Whisper-specific configuration
 WHISPER_CONFIG = {
@@ -114,6 +114,7 @@ def load_config_from_folder(config_folder):
     config_path = os.path.join(resolved_config_folder, 'llm_config.txt')
     whisper_path = os.path.join(resolved_config_folder, 'whisper_config.txt')
     config['prompts_folder'] = os.path.join(resolved_config_folder, 'prompts')
+    config['token_file'] = os.path.join(resolved_config_folder, 'token.json')
 
     # Load and update CONFIG
     if os.path.exists(config_path):
