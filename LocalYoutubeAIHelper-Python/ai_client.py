@@ -34,7 +34,7 @@ class AIClient:
             if not self.api_key:
                 raise ValueError("OpenAI API key is missing.")
             self.client = OpenAI(api_key=self.api_key)
-            logger.info(f"Successfully initialized OpenAI client")
+            logger.info(f"Successfully initialized OpenAI client. Model will be used: {self.config['default_model']}")
 
 
     @retry(
