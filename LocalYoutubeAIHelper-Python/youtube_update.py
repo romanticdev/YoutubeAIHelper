@@ -26,27 +26,56 @@ class YouTubeUpdater:
     def authenticate_youtube(self):
         """
         Authenticates to the YouTube API using OAuth2.
-
+        Handles token file existence, validity, and expiration gracefully.
+        
         Returns:
             googleapiclient.discovery.Resource: YouTube API service instance.
         """
         creds = None
-        if os.path.exists(self.token_file):
-            logger.info(f"{self.token_file} is exists. Loading...")
-            creds = Credentials.from_authorized_user_file(self.token_file, self.scopes)
 
+        # Attempt to load existing credentials from token file
+        if os.path.exists(self.token_file):
+            logger.info(f"Found token file at {self.token_file}. Attempting to load credentials...")
+            try:
+                creds = Credentials.from_authorized_user_file(self.token_file, self.scopes)
+            except Exception as e:
+                logger.error(f"Failed to load credentials from {self.token_file}: {e}")
+                logger.info("Falling back to OAuth flow for new credentials.")
+                creds = None
+
+        # If no valid creds, run OAuth flow
         if not creds or not creds.valid:
-            logger.info(f"{self.token_file} is not exists. Creating ...")
+            # Attempt to refresh if possible
             if creds and creds.expired and creds.refresh_token:
-                creds.refresh(Request())
-            else:
+                logger.info("Credentials are expired. Attempting to refresh...")
+                try:
+                    creds.refresh(Request())
+                    logger.info("Credentials successfully refreshed.")
+                except Exception as e:
+                    logger.error(f"Failed to refresh credentials: {e}")
+                    logger.info("Falling back to OAuth flow for new credentials.")
+                    creds = None
+
+            # If still no valid creds after refresh, run the installed app flow
+            if not creds or not creds.valid:
+                logger.info("No valid credentials available. Running OAuth flow...")
                 flow = InstalledAppFlow.from_client_secrets_file(self.client_secret_file, self.scopes)
                 creds = flow.run_local_server(port=0)
+                logger.info("OAuth flow completed. Obtained new credentials.")
 
-            with open(self.token_file, 'w') as token:
-                token.write(creds.to_json())
+            # Save the new credentials
+            try:
+                with open(self.token_file, 'w') as token:
+                    token.write(creds.to_json())
+                logger.info(f"Credentials stored at {self.token_file}.")
+            except Exception as e:
+                logger.error(f"Failed to save credentials to {self.token_file}: {e}")
 
-        return build('youtube', 'v3', credentials=creds)
+        # Build and return the service
+        service = build('youtube', 'v3', credentials=creds)
+        logger.info("YouTube service successfully authenticated and built.")
+        return service
+
 
     def get_video_details(self, video_id):
         """
