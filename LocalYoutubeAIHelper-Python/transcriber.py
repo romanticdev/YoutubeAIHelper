@@ -4,6 +4,8 @@ import datetime
 import srt
 import json
 import subprocess
+import tiktoken
+import math
 from ai_client import AIClient
 from utilities import setup_logging, ensure_directory_exists, load_file_content, save_file_content
 from config import CONFIG
@@ -101,7 +103,47 @@ class Transcriber:
             chunk = subtitles[i:i + max_subtitles]
             chunks.append(chunk)
         return chunks
-       
+    
+    def split_srt_file_by_tokens(self, srt_content, max_tokens, token_safety_percentage=0.75):
+        """
+        Splits SRT content into chunks based on token limit.
+        
+        Args:
+            srt_content (str): Content of the SRT file.
+            max_tokens (int): Maximum tokens allowed per request.
+            token_safety_percentage (float): Safety margin to prevent exceeding token limit.
+        
+        Returns:
+            List[List[srt.Subtitle]]: List of subtitle chunks.
+        """
+        subtitles = list(srt.parse(srt_content))
+        tokenizer = tiktoken.encoding_for_model(self.config['default_model'])
+        safe_token_limit = math.floor(max_tokens * token_safety_percentage)
+
+        chunks = []
+        current_chunk = []
+        current_tokens = 0
+
+        for subtitle in subtitles:
+            raw_srt_block = srt.compose([subtitle])
+            # Calculate the number of tokens for the raw SRT block
+            subtitle_tokens = len(tokenizer.encode(raw_srt_block))
+            
+            # If adding this subtitle exceeds the safe token limit, finalize the current chunk
+            if current_tokens + subtitle_tokens > safe_token_limit:
+                chunks.append(current_chunk)
+                current_chunk = [subtitle]
+                current_tokens = subtitle_tokens
+            else:
+                current_chunk.append(subtitle)
+                current_tokens += subtitle_tokens
+
+        # Append any remaining subtitles
+        if current_chunk:
+            chunks.append(current_chunk)
+
+        return chunks
+      
     def improve_transcription_file(self, srt_files):
         """
         Improves transcription of SRT files by correcting grammatical errors and punctuation.
@@ -122,13 +164,21 @@ class Transcriber:
                 logger.error("We don't have 'improve_srt_content' in whisper_config.txt to process")
                 return
             
+            max_tokens = self.config.get('max_tokens', 4096)
+            try:
+                max_tokens = int(max_tokens)
+            except ValueError:
+                logger.error(f"Invalid 'max_tokens' value in configuration: {self.config.get('max_tokens')}. Using default value of 4096.")
+                max_tokens = 4096
+
             # Split the SRT content into manageable chunks
-            subtitle_chunks = self.split_srt_file(original_srt_content)
-            logger.info(f"Divided SRT file into {len(subtitle_chunks)} chunks for processing.")
+            #subtitle_chunks = self.split_srt_file(original_srt_content)
+            subtitle_chunks = self.split_srt_file_by_tokens(original_srt_content, max_tokens)
+            logger.info(f"Divided SRT file into {len(subtitle_chunks)} token-safe chunks.")
             corrected_subtitles = []
             
             for chunk_index, chunk_subtitles in enumerate(subtitle_chunks):
-                logger.info(f"Sending for improvement {(chunk_index+1)} part")
+                logger.info(f"Sending chunk {chunk_index+1}/{len(subtitle_chunks)} for improvement")
                 chunk_srt_content = srt.compose(chunk_subtitles)
                 
                 messages = [
