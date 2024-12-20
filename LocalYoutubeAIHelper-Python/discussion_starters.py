@@ -1,5 +1,5 @@
 import os
-from utilities import load_file_content, ensure_directory_exists
+from utilities import load_file_content, ensure_directory_exists, load_variable_content
 from prompt_processor import PromptProcessor
 from config import CONFIG, WHISPER_CONFIG, load_config_from_folder
 from youtube_update import YouTubeUpdater
@@ -97,7 +97,7 @@ class DiscussionStarters:
         # they will be run here. The prompt_processor by default processes all prompts in the
         # `prompts` folder of the current configuration.
         prompt_txt_path = os.path.join(video_folder, 'summary.prompt.txt')
-        if not os.path.exists(transcript_txt_path):
+        if not os.path.exists(prompt_txt_path):
             self.prompt_processor.process_prompts_on_transcripts([video_folder])
     
     def load_context(self):
@@ -117,8 +117,7 @@ class DiscussionStarters:
         # Load summaries for previous 5 streams
         summaries = []
         for s in previous_streams:
-            summary_path = os.path.join(s, 'summary.prompt.txt')
-            summary = load_file_content(summary_path, "No summary found for this stream.")
+            summary = load_variable_content("summary", s)
             summaries.append(f"Stream: {s}\n{summary}")
 
         previous_summaries = "\n\n".join(summaries)
@@ -137,7 +136,7 @@ class DiscussionStarters:
 
         # Perform variable substitution
         prompt = base_prompt.replace("{{CURRENT_TRANSCRIPT}}", current_transcript)
-        prompt = prompt.replace("{{NUMBER_OF_STREAMS}}", self.number_of_streams)
+        prompt = prompt.replace("{{NUMBER_OF_STREAMS}}", str(self.number_of_streams))
         prompt = prompt.replace("{{PREVIOUS_SUMMARIES}}", previous_summaries)
         prompt = prompt.replace("{{WORLD_NEWS}}", world_news)
         prompt = prompt.replace("{{AI_NEWS}}", ai_news)
