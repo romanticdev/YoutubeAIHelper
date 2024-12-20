@@ -10,7 +10,7 @@ from config import CONFIG, resolve_path
 
 logger = setup_logging()
 
-class YouTubeUpdater:
+class  YouTubeUpdater:
     def __init__(self, config):
         """
         Initializes the YouTubeUpdater with configuration settings.
@@ -21,7 +21,7 @@ class YouTubeUpdater:
         self.token_file = resolve_path(config['token_file'])
         self.client_secret_file = config['client_secret_file']
         self.scopes = config['scopes']
-        self.service = self.authenticate_youtube()
+        self.authenticate_youtube()
 
     def authenticate_youtube(self):
         """
@@ -72,9 +72,67 @@ class YouTubeUpdater:
                 logger.error(f"Failed to save credentials to {self.token_file}: {e}")
 
         # Build and return the service
-        service = build('youtube', 'v3', credentials=creds)
+        self.service = build('youtube', 'v3', credentials=creds)
         logger.info("YouTube service successfully authenticated and built.")
-        return service
+        
+        self.__set_authenticated_channel_id()
+        
+        return
+
+    def __set_authenticated_channel_id(self):
+        """
+        Retrieve the channel ID of the authenticated user.
+        Args:
+            service: The authenticated YouTube service object.    
+        Returns:
+            str: The channel ID of the authenticated user.
+        """
+        try:
+            self.channel_id = None
+            # Make a request to the "channels" endpoint
+            response = self.service.channels().list(
+                part="id",
+                mine=True
+            ).execute()
+
+            # Extract the channel ID
+            if 'items' in response and len(response['items']) > 0:
+                self.channel_id = response['items'][0]['id']
+                logger.info(f"Authenticated channel ID: {self.channel_id}")
+                return
+            else:
+                logger.error("No channel found for the authenticated user.")
+                self.channel_id = None
+                return
+        except Exception as e:
+            logger.error(f"Failed to retrieve channel ID: {e}")
+            self.channel_id = None
+            return
+        
+    def get_last_streams(self, number_of_streams=5):
+        """
+        Retrieves the last N completed live streams from the channel.
+        Returns a list of video IDs.
+        """
+        logger.info(f"Fetching last {number_of_streams} completed live streams from YouTube...")
+        if not self.channel_id:
+            logger.error("Channel ID is not set in configuration.")
+            return []
+
+        # Search for last 6 completed live streams
+        request = self.service.search().list(
+            part='snippet',
+            channelId=self.channel_id,
+            type='video',
+            eventType='completed',
+            order='date',
+            maxResults=number_of_streams
+        )
+        response = request.execute()
+        video_ids = [item['id']['videoId'] for item in response.get('items', [])]
+        
+        logger.info(f"Found last {len(video_ids)} completed live streams: {video_ids}")
+        return video_ids
 
 
     def get_video_details(self, video_id):
