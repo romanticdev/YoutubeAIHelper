@@ -398,3 +398,4 @@ FodyWeavers.xsd
 *.sln.iml
 
 .vscode/*
+combined_files_for_llm.txt

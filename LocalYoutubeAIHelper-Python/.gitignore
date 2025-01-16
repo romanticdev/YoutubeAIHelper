@@ -3,3 +3,6 @@ token.json
 *.env
 local.env
 test.ipynb
+
+combined_files_for_llm.txt
+test_comapre.bat
