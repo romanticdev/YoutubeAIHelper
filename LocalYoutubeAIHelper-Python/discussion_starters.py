@@ -6,6 +6,7 @@ from youtube_update import YouTubeUpdater
 from downloader import Downloader
 from transcriber import Transcriber
 from prompt_processor import PromptProcessor
+from news_extractor import NewsExtractor
 
 
 class DiscussionStarters:
@@ -18,6 +19,8 @@ class DiscussionStarters:
         self.prompt_processor = PromptProcessor(config)
         self.transcriber = Transcriber(config, whisper_config)
         self.number_of_streams = number_of_streams
+        
+        self.news_extractor = NewsExtractor(config)
 
     def prepare_last_streams(self):
         """
@@ -27,6 +30,7 @@ class DiscussionStarters:
         3. If not found locally, download the video.
         4. Return a list of local directories corresponding to the N streams.
         """
+        
         video_ids = self.youtube_updater.get_last_streams(self.number_of_streams)
         if not video_ids:
             # Handle no videos found
@@ -121,13 +125,14 @@ class DiscussionStarters:
             summaries.append(f"Stream: {s}\n{summary}")
 
         previous_summaries = "\n\n".join(summaries)
+        
+        top_stories_token = self.config.get('google_top_stories_token', 'CAAqJggKIiBDQkFTRWdvSUwyMHZNRFZxYUdjU0FtVnVHZ0pWVXlnQVAB')
+        
+        general_news_raw = self.news_extractor.get_general_news(num_results=3, topic_token=top_stories_token)
+        ai_news_raw = self.news_extractor.get_ai_news(num_results=3)
+        # we will use 6*4 = 24 tokens for news (from 50 daily)
 
-        # Fetching world and AI news: For a prototype, hardcode or load from a file
-        # Later, integrate a news API, or a separate prompt that fetches news from a known source.
-        world_news = "Today’s world news: Major climate summit reached no agreement..."
-        ai_news = "AI news: OpenAI released a new model improvement for GPT-4..."
-
-        return current_transcript, previous_summaries, world_news, ai_news
+        return current_transcript, previous_summaries, general_news_raw, ai_news_raw
 
     def build_prompt(self, current_transcript, previous_summaries, world_news, ai_news):
         # Load the discussion_starters prompt template
@@ -149,9 +154,30 @@ class DiscussionStarters:
 
         # Use the PromptProcessor to call the model
         messages = [
-            {"role": "system", "content": prompt_content},
+            {"role": "user", "content": prompt_content},
         ]
 
         # Directly call create_chat_completion here or add a dedicated prompt file:
         response = self.prompt_processor.client.create_chat_completion(messages=messages)
         return response.choices[0].message.content
+    
+    
+    def _format_news_for_prompt(self, news_list):
+        """
+        Given a list of news article dicts, build a bullet-point string
+        for use in prompt context.
+        """
+        if not news_list:
+            return "No news available."
+
+        lines = []
+        for i, article in enumerate(news_list, 1):
+            line = (
+                f"{i}. {article.get('title','No Title')} "
+                f"(Source: {article.get('source','Unknown')})\n"
+                f"   Link: {article.get('link')}\n"
+                f"   Date: {article.get('date')}\n"
+                f"   Text: {article.get('text')}\n"
+            )
+            lines.append(line)
+        return "\n".join(lines)

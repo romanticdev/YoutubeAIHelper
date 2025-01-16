@@ -44,24 +44,46 @@ class AIClient:
     )
     def create_chat_completion(self, messages, **kwargs):
         if self.use_azure:
+            parameters = {
+                'model': kwargs.get('deployment_name', self.deployment_name),
+                'messages': messages,
+                'max_tokens': int(kwargs.get('max_tokens', self.config.get('max_tokens',4000))),
+                'temperature': float(kwargs.get('temperature', self.config.get('temperature', 0.7))),
+                'top_p': float(kwargs.get('top_p', self.config.get('top_p', 1.0))),
+                'response_format': kwargs.get('response_format',None),
+            }
+            if kwargs.get('function_call',None):
+                parameters['function_call'] = kwargs['function_call']
+                
+            if kwargs.get('functions',None):
+                parameters['functions'] = kwargs['functions']
+            
             return self.client.chat.completions.create(
-                model=kwargs.get('deployment_name', self.deployment_name),
-                messages=messages,
-                max_tokens=int(kwargs.get('max_tokens', self.config.get('max_tokens',4000))),
-                temperature=float(kwargs.get('temperature', self.config.get('temperature', 0.7))),
-                top_p=float(kwargs.get('top_p', self.config.get('top_p', 1.0))),
-                response_format=kwargs.get('response_format',None)
+                **parameters
             )
 
         else:
-            return self.client.chat.completions.create(
-                model=kwargs.get('model', self.config['default_model']),
-                messages=messages,
-                max_tokens=int(kwargs.get('max_tokens', self.config.get('max_tokens',4000))),
-                temperature=float(kwargs.get('temperature', self.config.get('temperature', 0.7))),
-                top_p=float(kwargs.get('top_p', self.config.get('top_p', 1.0))),
-                response_format=kwargs.get('response_format',None)
-            )
+            
+            parameters = {
+                'model': kwargs.get('model', self.config['default_model']),
+                'messages': messages,
+                'temperature': float(kwargs.get('temperature', self.config.get('temperature', 0.7))),
+                'top_p': float(kwargs.get('top_p', self.config.get('top_p', 1.0))),
+                'response_format': kwargs.get('response_format', None),
+            }
+            
+            if kwargs.get('function_call',None):
+                parameters['function_call'] = kwargs['function_call']
+            
+            if kwargs.get('functions',None):
+                parameters['functions'] = kwargs['functions']
+
+            if 'max_completion_tokens' in self.config:
+                parameters['max_completion_tokens'] = int(self.config['max_completion_tokens'])
+            else:
+                parameters['max_tokens'] = int(kwargs.get('max_tokens', self.config.get('max_tokens', 4000)))
+
+            return self.client.chat.completions.create(**parameters)
                 
     @retry(
     wait=wait_random_exponential(min=1, max=60),
@@ -70,15 +92,17 @@ class AIClient:
     )
     def transcribe_audio(self, audio_file, **kwargs):
         if self.use_azure:
-            return self.whisperclient.audio.transcriptions.create(
+            response = self.whisperclient.audio.transcriptions.create(
                 file=audio_file,
                 model=self.whisper_config['deployment_name'],
                 **kwargs
-                )
+            )
         else:
-            return self.client.audio.transcriptions.create(
+            response = self.client.audio.transcriptions.create(
                 file=audio_file,
                 model="whisper-1",
                 **kwargs
-                )
+            )
+        
+        return response
            

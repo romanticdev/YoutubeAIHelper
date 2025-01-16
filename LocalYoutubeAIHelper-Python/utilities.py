@@ -1,6 +1,8 @@
 import re
 import logging
 import os
+import glob
+from datetime import datetime, timedelta
 
 def setup_logging(log_level='INFO'):
     """
@@ -162,3 +164,46 @@ def save_file_content(filepath, content):
     """
     with open(filepath, 'w', encoding='utf-8') as file:
         file.write(content)
+
+
+def get_active_transcript_file(dir_path: str = "transcripts", cutoff_minutes: int = 60) -> str:
+    """
+    Looks in `dir_path` for a transcript file that was last modified
+    within `cutoff_minutes` minutes. If found, returns its path; 
+    otherwise, creates a new transcript file with a timestamped name 
+    and returns that path.
+    """
+    # Ensure the directory exists
+    os.makedirs(dir_path, exist_ok=True)
+
+    now = datetime.now()
+    cutoff_time = now - timedelta(minutes=cutoff_minutes)
+
+    # Look for files named like "transcript_YYYYMMDD_HHMM.txt"
+    pattern = os.path.join(dir_path, "transcript_*.txt")
+    candidate_files = glob.glob(pattern)
+
+    latest_file = None
+    latest_mtime = None
+
+    for file_path in candidate_files:
+        mtime = datetime.fromtimestamp(os.path.getmtime(file_path))
+        if mtime > cutoff_time:
+            # This file is within the cutoff
+            if not latest_file or mtime > latest_mtime:
+                latest_file = file_path
+                latest_mtime = mtime
+
+    if latest_file:
+        return latest_file
+    else:
+        # Create a new file with current date/time
+        # e.g. "transcript_20231223_1530.txt"
+        timestamp_str = now.strftime("%Y%m%d_%H%M")
+        new_filename = f"transcript_{timestamp_str}.txt"
+        new_filepath = os.path.join(dir_path, new_filename)
+
+        # Optionally create the empty file
+        with open(new_filepath, "w", encoding="utf-8") as f:
+            f.write("")
+        return new_filepath

@@ -24,6 +24,12 @@ AZURE_DEPLOYMENT_NAME = os.getenv('AZURE_DEPLOYMENT_NAME', '')
 AZURE_API_VERSION = os.getenv('AZURE_API_VERSION', '')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
 
+SERP_API_KEY = os.getenv('SERP_API_KEY','')
+WORLD_NEWS_API_KEY = os.getenv('WORLD_NEWS_API_KEY','')
+#config['news_api_key']  = 
+#config['worldnews_api_key']
+
+
 logger.info(f"We are using {'Azure' if USE_AZURE_OPENAI else 'OpenAI SDK'}")
 if USE_AZURE_OPENAI:
     logger.info(f"Azure OpenAI API Key Loaded: {'Yes' if AZURE_OPENAI_API_KEY else 'No'}")
@@ -76,6 +82,8 @@ CONFIG = {
     'default_config_folder': DEFAULT_CONFIG_FOLDER,
     'prompts_folder': PROMPTS_FOLDER,
     'log_level': LOG_LEVEL,
+    'news_api_key': SERP_API_KEY,
+    'worldnews_api_key': WORLD_NEWS_API_KEY,
 }
 
 
@@ -113,6 +121,7 @@ def load_config_from_folder(config_folder):
     resolved_config_folder = resolve_path(config_folder)
     config_path = os.path.join(resolved_config_folder, 'llm_config.txt')
     whisper_path = os.path.join(resolved_config_folder, 'whisper_config.txt')
+    config['config_folder'] = resolved_config_folder
     config['prompts_folder'] = os.path.join(resolved_config_folder, 'prompts')
     config['token_file'] = os.path.join(resolved_config_folder, 'token.json')
 
