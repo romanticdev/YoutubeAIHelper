@@ -10,7 +10,7 @@ from config import CONFIG, resolve_path
 
 logger = setup_logging()
 
-class YouTubeUpdater:
+class  YouTubeUpdater:
     def __init__(self, config):
         """
         Initializes the YouTubeUpdater with configuration settings.
@@ -21,7 +21,10 @@ class YouTubeUpdater:
         self.token_file = resolve_path(config['token_file'])
         self.client_secret_file = config['client_secret_file']
         self.scopes = config['scopes']
-        self.service = self.authenticate_youtube()
+        self.channel_id = None
+        self.service = None
+        self.authenticate_youtube()
+
 
     def authenticate_youtube(self):
         """
@@ -31,6 +34,9 @@ class YouTubeUpdater:
         Returns:
             googleapiclient.discovery.Resource: YouTube API service instance.
         """
+        if self.service and self.channel_id:
+            return
+        
         creds = None
 
         # Attempt to load existing credentials from token file
@@ -72,9 +78,67 @@ class YouTubeUpdater:
                 logger.error(f"Failed to save credentials to {self.token_file}: {e}")
 
         # Build and return the service
-        service = build('youtube', 'v3', credentials=creds)
+        self.service = build('youtube', 'v3', credentials=creds)
         logger.info("YouTube service successfully authenticated and built.")
-        return service
+        
+        self.__set_authenticated_channel_id()
+        
+        return
+
+    def __set_authenticated_channel_id(self):
+        """
+        Retrieve the channel ID of the authenticated user.
+        Args:
+            service: The authenticated YouTube service object.    
+        Returns:
+            str: The channel ID of the authenticated user.
+        """
+        try:
+            self.channel_id = None
+            # Make a request to the "channels" endpoint
+            response = self.service.channels().list(
+                part="id",
+                mine=True
+            ).execute()
+
+            # Extract the channel ID
+            if 'items' in response and len(response['items']) > 0:
+                self.channel_id = response['items'][0]['id']
+                logger.info(f"Authenticated channel ID: {self.channel_id}")
+                return
+            else:
+                logger.error("No channel found for the authenticated user.")
+                self.channel_id = None
+                return
+        except Exception as e:
+            logger.error(f"Failed to retrieve channel ID: {e}")
+            self.channel_id = None
+            return
+        
+    def get_last_streams(self, number_of_streams=5):
+        """
+        Retrieves the last N completed live streams from the channel.
+        Returns a list of video IDs.
+        """
+        logger.info(f"Fetching last {number_of_streams} completed live streams from YouTube...")
+        if not self.channel_id:
+            logger.error("Channel ID is not set in configuration.")
+            return []
+
+        # Search for last 6 completed live streams
+        request = self.service.search().list(
+            part='snippet',
+            channelId=self.channel_id,
+            type='video',
+            eventType='completed',
+            order='date',
+            maxResults=number_of_streams
+        )
+        response = request.execute()
+        video_ids = [item['id']['videoId'] for item in response.get('items', [])]
+        
+        logger.info(f"Found last {len(video_ids)} completed live streams: {video_ids}")
+        return video_ids
 
 
     def get_video_details(self, video_id):
@@ -258,3 +322,92 @@ class YouTubeUpdater:
         except Exception as e:
             logger.error(f"Error reading YouTube ID from file: {e}")
             return None
+        
+    def find_active_live_stream(self, video_id=None):
+        """
+        Finds the active live stream for the authenticated channel.
+
+        Returns:
+            dict: Active live stream details, or None if no active stream.
+        """
+        try:
+            if video_id:  # Find live stream for a specific video
+                request = self.service.videos().list(
+                    part='liveStreamingDetails',
+                    id=video_id
+                )
+                response = request.execute()
+                if 'items' in response and len(response['items']) > 0:
+                    live_streaming_details = response['items'][0].get('liveStreamingDetails', {})
+                    live_chat_id = live_streaming_details.get('activeLiveChatId')
+                    return live_chat_id
+                return None
+            else:   # Find any active live stream on own channel
+                request = self.service.liveBroadcasts().list(
+                    part='snippet,contentDetails,status',
+                    broadcastStatus='active',
+                    broadcastType='all'
+                )
+                response = request.execute()
+                if 'items' in response and len(response['items']) > 0:
+                    live_broadcast = response['items'][0]
+                    live_chat_id = live_broadcast['snippet'].get('liveChatId')
+                    if live_chat_id:
+                        return  live_chat_id
+                return None
+        except Exception as e:
+            logger.error(f"Error finding active live stream: {e}")
+            return None
+
+    def post_live_chat_message(self, live_chat_id, text):
+        """
+        Posts a message to the live chat of a live stream.
+
+        Args:
+            live_chat_id (str): ID of the live chat.
+            text (str): Message text to post.
+        """
+        try:
+            request = self.service.liveChatMessages().insert(
+                part='snippet',
+                body={
+                    'snippet': {
+                        'liveChatId': live_chat_id,
+                        'type': 'textMessageEvent',
+                        'textMessageDetails': {
+                            'messageText': text
+                        }
+                    }
+                }
+            )
+            response = request.execute()
+            logger.info(f"Posted message to live chat: {response}")
+        except Exception as e:
+            logger.error(f"Error posting live chat message: {e}")
+      
+            
+    def fetch_live_chat_messages(self, live_chat_id, page_token=None):
+        """
+        Fetches live chat messages for a live stream.
+
+        Args:
+            live_chat_id (str): ID of the live chat.
+            page_token (str): Token for the next page of results.
+
+        Returns:
+            tuple: List of live chat messages and the next page token.
+        """
+        try:
+            request = self.service.liveChatMessages().list(
+                liveChatId=live_chat_id,
+                part='snippet,authorDetails',
+                pageToken=page_token
+            )
+            response = request.execute()
+            messages = response.get('items', [])
+            next_page_token = response.get('nextPageToken')
+            return messages, next_page_token
+        except Exception as e:
+            logger.error(f"Error fetching live chat messages: {e}")
+            return [], None
+        

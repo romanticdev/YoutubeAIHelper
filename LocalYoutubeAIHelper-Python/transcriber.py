@@ -293,19 +293,19 @@ class Transcriber:
 
             # Process segments
             for i, segment in enumerate(response.segments):
-                start = datetime.timedelta(seconds=segment['start']) + start_delta
-                end = datetime.timedelta(seconds=segment['end']) + start_delta
+                start = datetime.timedelta(seconds=segment.start) + start_delta
+                end = datetime.timedelta(seconds=segment.end) + start_delta
                 if start >= end:
                     end = start + MIN_DURATION
-                segments.append(srt.Subtitle(index=i + 1, start=start, end=end, content=segment.get('text', '').strip()))
+                segments.append(srt.Subtitle(index=i + 1, start=start, end=end, content= (segment.text or '').strip()))
 
             # Process words
             for i, word in enumerate(response.words):
-                start = datetime.timedelta(seconds=word['start']) + start_delta
-                end = datetime.timedelta(seconds=word['end']) + start_delta
+                start = datetime.timedelta(seconds=word.start) + start_delta
+                end = datetime.timedelta(seconds=word.end) + start_delta
                 if start >= end:
                     end = start + MIN_DURATION                
-                words.append(srt.Subtitle(index=i + 1, start=start, end=end, content=word.get('word', '').strip()))
+                words.append(srt.Subtitle(index=i + 1, start=start, end=end, content=(word.word or '').strip()))
 
             return {'segments': segments, 'words': words}
         except Exception as e:
@@ -419,8 +419,8 @@ class Transcriber:
         # Save raw responses as JSON
         raw_responses = transcripts['raw_responses']
         raw_responses_path = os.path.join(output_dir, 'raw_responses.json')
-        with open(raw_responses_path, 'w', encoding='utf-8') as f:
-            json.dump(raw_responses, f, indent=4)
+        # with open(raw_responses_path, 'w', encoding='utf-8') as f:
+        #     json.dump(dict(raw_responses), f, indent=4)
 
         # Save files
         save_file_content(os.path.join(output_dir, 'transcript.srt'), srt_content)

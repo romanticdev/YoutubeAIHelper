@@ -4,6 +4,7 @@ from downloader import Downloader
 from transcriber import Transcriber
 from youtube_update import YouTubeUpdater
 from prompt_processor import PromptProcessor
+from discussion_starters import DiscussionStarters
 from config import CONFIG, WHISPER_CONFIG, load_config_from_folder
 from utilities import setup_logging
 
@@ -43,6 +44,9 @@ def parse_arguments():
     parser_prompts = subparsers.add_parser('process-prompts', help="Process prompts on transcribed files")
     parser_prompts.add_argument('folders', nargs='+', help="Folders containing transcribed files")
 
+    # Generate Discussion starter
+    parser_discussion = subparsers.add_parser('generate-discussion-starters', help="Generate discussion starters for the next stream")
+   
     # Update YouTube videos
     parser_update = subparsers.add_parser('update-youtube', help="Update YouTube videos using folder details")
     parser_update.add_argument('folder', help="Folder containing file_details.txt and optional metadata files")
@@ -115,6 +119,11 @@ def main():
 
     elif args.mode == 'update-youtube':
         youtube_updater.process_update_youtube(args.folder)
+        
+    elif args.mode == 'generate-discussion-starters':
+        ds = DiscussionStarters(config, whisper_config,number_of_streams=3)
+        questions = ds.generate_questions()
+        print("Generated Questions:\n", questions)
 
 if __name__ == "__main__":
     main()
