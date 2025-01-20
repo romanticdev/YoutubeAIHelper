@@ -333,12 +333,12 @@ To run local LLMs (e.g., Llama 2) on your machine and connect them through an Op
 
 Once configured, simply ensure your `local.env` file is pointing to Ollama’s local endpoint:
 
-\`\`\`env
+```env
 OPENAI_API_KEY=dummy-ollama-key
 OPENAI_BASE_URL=http://localhost:11411/v1
 USE_AZURE_OPENAI=false
 DEFAULT_MODEL=phi42
-\`\`\`
+```
 
 Then, the rest of the commands (e.g., \`python main.py full-process\`) will transparently use your local Ollama model.
 
