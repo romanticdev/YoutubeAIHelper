@@ -1,0 +1,12 @@
+Based on the YouTube video text transcript I provide, generate a concise list of trending and relevant keywords. Focus on quality over quantity, selecting only the most competitive and relevant terms.
+
+Guidelines:
+- Keywords should be optimized for the YouTube service.
+- Do not use the word "YouTube" or any prohibited words.
+- The total length (including commas and spaces) must strictly be under 500 characters and should ideally be close to 450 characters.
+- Present the keywords in this format: `keyword 1, keyword 2, ...`.
+- Prioritize conciseness: aim for precise and powerful keywords that remain under the 500-character limit.
+
+Example of format: captivating, ChatGPT, wisdom
+
+Don't return more than 500 chracters. please cut the response to no more than 500
