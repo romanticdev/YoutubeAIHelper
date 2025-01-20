@@ -326,7 +326,22 @@ The `discussion_starters.py` module is designed to:
   questions = ds.generate_questions()
   print(questions)
   ```
-  
+
+### 5. Using Local Models with Ollama
+
+To run local LLMs (e.g., Llama 2) on your machine and connect them through an OpenAI-compatible interface, you can use [**Ollama**](https://ollama.com). The setup steps are described in [**configurations/ollama/readme.md**](configurations/ollama/readme.md).
+
+Once configured, simply ensure your `local.env` file is pointing to Ollama’s local endpoint:
+
+\`\`\`env
+OPENAI_API_KEY=dummy-ollama-key
+OPENAI_BASE_URL=http://localhost:11411/v1
+USE_AZURE_OPENAI=false
+DEFAULT_MODEL=phi42
+\`\`\`
+
+Then, the rest of the commands (e.g., \`python main.py full-process\`) will transparently use your local Ollama model.
+
 ## Example Workflows
 
 **Full Process Example**:
