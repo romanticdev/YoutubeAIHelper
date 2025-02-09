@@ -5,9 +5,9 @@ This folder contains information and configurations to run your Local YouTube AI
 ## 1. Prerequisites
 
 1. **Install LM Studio:**
-   - Visit the [LM Studio website](https://lmstudio.ai) or the [LM Studio GitHub repository](https://github.com/lm-studio/lm-studio) for installation instructions.
+   - Visit the [LM Studio website](https://lmstudio.ai) for installation instructions.
    - Follow the installation steps to set up LM Studio on your local machine.
-   - Ensure that LM Studio is running—for example, by executing the provided launcher or a command such as `lmstudio serve`.
+   - Ensure that LM Studio is running—for example, by executing its executable and making sure that server is running [help](https://lmstudio.ai/docs/api)
 
 2. **Download and Configure the Model:**
    - Verify that the **deepseek‑r1‑distill‑qwen‑7b** model is available in your LM Studio installation.
