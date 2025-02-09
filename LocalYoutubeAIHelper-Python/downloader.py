@@ -3,8 +3,6 @@ import re
 import subprocess
 from yt_dlp import YoutubeDL
 from utilities import sanitize_filename, is_youtube_url, setup_logging
-from config import CONFIG
-
 logger = setup_logging()
 
 class Downloader:

@@ -23,7 +23,8 @@ def collect_files(starting_dir):
         dirs[:] = [d for d in dirs if d not in excluded_dirs]
         for file in files:
             full_path = os.path.join(root, file)
-            if (file.endswith('.py') or file.endswith('.md')) and full_path != os.path.abspath(__file__):
+            allowed_extensions = ['.py', '.md','.bat','.txt']
+            if any(file.endswith(ext) for ext in allowed_extensions) and full_path != os.path.abspath(__file__):
                 collected_files.append(full_path)
     return collected_files
 

@@ -1,11 +1,20 @@
 from openai import AzureOpenAI
 from openai import OpenAI, RateLimitError
+import threading
 from tenacity import (
     retry,
     wait_random_exponential,
     stop_after_attempt,
     retry_if_exception_type,
 )
+
+from pydub import AudioSegment
+from pydub.playback import play
+import warnings
+from io import BytesIO
+import base64
+import simpleaudio as sa
+
 from utilities import setup_logging
 
 logger = setup_logging()
@@ -91,8 +100,10 @@ class AIClient:
                     kwargs.get("temperature", self.config.get("temperature", 0.7))
                 ),
                 "top_p": float(kwargs.get("top_p", self.config.get("top_p", 1.0))),
-                "response_format": kwargs.get("response_format", None),
             }
+            
+            if kwargs.get("response_format", None):
+                parameters["response_format"] = kwargs["response_format"]
 
             if kwargs.get("function_call", None):
                 parameters["function_call"] = kwargs["function_call"]
@@ -127,3 +138,86 @@ class AIClient:
             )
 
         return response
+
+    @retry(
+        wait=wait_random_exponential(min=1, max=20),
+        stop=stop_after_attempt(3),
+        retry=retry_if_exception_type(RateLimitError),
+    )
+    def censor_text(self, text, output_beep=False):
+        # Call OpenAI's Moderation API
+        response = self.client.moderations.create(
+            input=text, model="text-moderation-latest"
+        )
+
+        # Categories object from the API response
+        categories = response.results[0].categories
+
+        # List of categories considered as profane
+        profane_categories = [
+            "hate",
+            "hate/threatening",
+            "self-harm",
+            "sexual",
+            "sexual/minors",
+            "violence",
+            "violence/graphic",
+            "harassment",
+            "harassment/threatening",
+            "self-harm/intent",
+            "self-harm/instructions",
+            "self-harm/graphic",
+            "sexual/explicit",
+            "sexual/erotica",
+            "violence/intent",
+            "violence/instructions",
+        ]
+
+        # Check if any profane category is flagged
+        flagged_categories = [
+            category
+            for category in profane_categories
+            if getattr(categories, category, False)
+        ]
+        if len(flagged_categories) > 0:
+            # Split text into wordss
+            words = text.split()
+            censored_words = []
+            logger.info(f"Text moderation results = [ {", ".join(flagged_categories)}]")
+            if output_beep:
+                return "Beep"
+            else:
+                return ""
+        else:
+            # If no profane content is detected, return the original text
+            return text
+
+    def text_to_speech(self, text, voice="echo"):
+        response = self.client.audio.speech.create(
+            model="tts-1",
+            voice=voice,
+            input=text,
+            response_format="mp3",
+        )
+
+        audio_content = response.content
+        audio_stream = BytesIO(audio_content)
+        audio = AudioSegment.from_file(audio_stream, format="mp3")
+
+        # Convert to numpy array format for sounddevice
+        import numpy as np
+        import sounddevice as sd
+
+        samples = np.array(audio.get_array_of_samples())
+        if audio.channels > 1:
+            samples = samples.reshape((-1, audio.channels))
+
+        def play_audio():
+            try:
+                sd.play(samples, audio.frame_rate)
+                sd.wait()
+            except Exception as e:
+                logger.error(f"Audio playback failed: {e}")
+
+        thread = threading.Thread(target=play_audio)
+        thread.start()

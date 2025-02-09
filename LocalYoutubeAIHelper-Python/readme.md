@@ -59,6 +59,12 @@ This Python-based tool extends the functionality of the overall project by provi
    - Configure OpenAI or Azure OpenAI keys, default models, and other settings via `local.env` and configuration files.  
    - Supports both OpenAI API keys and Azure OpenAI credentials.
 
+9. **Deepseek Model Instructions**
+For instructions on using the **deepseek‑r1‑distill‑qwen‑7b** model with LM Studio , please refer to the [Deepseek Readme](configurations/deepseek/readme.md).
+
+10. **Ollama Integration**
+For instructions on using local models with Ollama, please refer to the [Ollama Readme](configurations/ollama/readme.md).
+
 ## Requirements
 
 You will need the following tools and dependencies installed:
@@ -341,6 +347,10 @@ DEFAULT_MODEL=phi42
 ```
 
 Then, the rest of the commands (e.g., \`python main.py full-process\`) will transparently use your local Ollama model.
+
+### 6. Using LM Studio for Local LLMs
+
+You can also use LM Studio to host local LLMs and connect to them via the Local YouTube AI Helper. For instructions on setting up LM Studio and connecting to it, refer to the [**configurations/deepseek/readme.md**](configurations/deepseek/readme.md).
 
 ## Example Workflows
 

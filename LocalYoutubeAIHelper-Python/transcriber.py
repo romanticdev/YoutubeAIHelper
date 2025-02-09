@@ -86,24 +86,6 @@ class Transcriber:
             return
         self.improve_transcription_file(srt_files)
     
-    def split_srt_file(self, srt_content, max_subtitles=350):
-        """
-        Splits the SRT content into chunks to avoid exceeding the token limit.
-
-        Args:
-            srt_content (str): The content of the SRT file.
-            max_subtitles (int): Maximum number of subtitles per chunk.
-
-        Returns:
-            List[List[srt.Subtitle]]: A list of lists containing srt.Subtitle objects.
-        """
-        subtitles = list(srt.parse(srt_content))
-        chunks = []
-        for i in range(0, len(subtitles), max_subtitles):
-            chunk = subtitles[i:i + max_subtitles]
-            chunks.append(chunk)
-        return chunks
-    
     def split_srt_file_by_tokens(self, srt_content, max_tokens, token_safety_percentage=0.75):
         """
         Splits SRT content into chunks based on token limit.

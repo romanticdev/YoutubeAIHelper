@@ -160,24 +160,3 @@ class DiscussionStarters:
         # Directly call create_chat_completion here or add a dedicated prompt file:
         response = self.prompt_processor.client.create_chat_completion(messages=messages)
         return response.choices[0].message.content
-    
-    
-    def _format_news_for_prompt(self, news_list):
-        """
-        Given a list of news article dicts, build a bullet-point string
-        for use in prompt context.
-        """
-        if not news_list:
-            return "No news available."
-
-        lines = []
-        for i, article in enumerate(news_list, 1):
-            line = (
-                f"{i}. {article.get('title','No Title')} "
-                f"(Source: {article.get('source','Unknown')})\n"
-                f"   Link: {article.get('link')}\n"
-                f"   Date: {article.get('date')}\n"
-                f"   Text: {article.get('text')}\n"
-            )
-            lines.append(line)
-        return "\n".join(lines)

@@ -1,0 +1,7 @@
+Please proofread and correct the following SRT file. 
+Fix any grammatical errors, punctuation mistakes, and typos. 
+Do not change the content significantly—just make necessary corrections. 
+Keep the number of segments and their timecodes exactly the same. 
+Return the corrected SRT file in the same format. 
+Return just clean SRT content. 
+Don't start with ``` or ```srt or similar. 

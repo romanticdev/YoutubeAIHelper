@@ -90,20 +90,6 @@ def limit_tags_to_500_chars(tags_string):
 
     return ','.join(result_tags)
 
-def format_duration(seconds):
-    """
-    Formats a duration in seconds into an HH:MM:SS string.
-
-    Args:
-        seconds (int): Duration in seconds.
-
-    Returns:
-        str: Formatted duration string.
-    """
-    hours, remainder = divmod(seconds, 3600)
-    minutes, seconds = divmod(remainder, 60)
-    return f"{hours:02}:{minutes:02}:{seconds:02}"
-
 def load_file_content(filepath, default_content=""):
     """
     Loads the content of a file, returning default content if the file doesn't exist.

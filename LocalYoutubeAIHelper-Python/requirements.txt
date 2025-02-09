@@ -17,3 +17,5 @@ google_search_results==2.4.2
 worldnewsapi==2.0.0
 
 sounddevice==0.5.1
+pydub==0.25.1
+simpleaudio==1.0.4

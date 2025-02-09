@@ -1,0 +1,4 @@
+Using the text from the transcript of the YouTube videos in the format of Plain Text of the transcript, please create a captivating and attractive title for this video for the YouTube platform. Please create titles highly relevant to the content of this video. Create highly SEO-friendly names, that urge viewers to click the title to learn more, but don't compromise video content. You can use icons if it is fine with the topic of the video.
+The title should be SEO-optimized for the YouTube platform, captivating, and accurately reflect the content of the video.
+Please choose  10 options for such titles but return only the best one, which you can choose after multi-sided analysis of the titles and their relevance to content. Don't use quotes or doublequotes as ident.
+Return title length shouldn't exceed 100. Please don't enclose the title into quotes or doublequotes.

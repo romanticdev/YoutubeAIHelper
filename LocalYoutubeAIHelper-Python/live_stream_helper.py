@@ -1,7 +1,7 @@
 import os
 import subprocess
+import sys
 
-# Make sure these imports point to wherever your modules are:
 from youtube_update import YouTubeUpdater
 from config import load_config_from_folder, CONFIG, WHISPER_CONFIG
 
@@ -42,6 +42,11 @@ def find_active_stream_id():
     return None
 
 def main():
+    # Check if the caller passed the --full-process flag
+    full_process_flag = ""
+    if "--full-process" in sys.argv:
+        full_process_flag = "--full-process"
+
     # 1) Attempt to discover the active live stream ID
     video_id = find_active_stream_id()
     if not video_id:
@@ -49,28 +54,25 @@ def main():
         return
     
     # 2) Build the path to your activate script (.venv\Scripts\activate.bat)
-    #    Adjust if your venv folder is named differently, or if it’s in a different path.
     venv_activate = os.path.abspath(os.path.join(".venv", "Scripts", "activate.bat"))
     if not os.path.isfile(venv_activate):
         print(f"[ERROR] Cannot find venv activate script at: {venv_activate}")
         return
     
-    # 3) Launch livechatbot.py in a new cmd window with the environment activated
-    #    We use `call` so the batch script is properly executed.
-    #    Then we chain with `&& python livechatbot.py {video_id}` so it runs in the activated environment.
+    # 3) Launch livechatbot.py in a new cmd window with the environment activated.
+    #    We pass the --full-process flag (if specified) and the video ID.
     cmd_livechatbot = (
-        f'start cmd /k "call "{venv_activate}" && python livechatbot.py {video_id}"'
+        f'start cmd /k "call \"{venv_activate}\" && python livechatbot.py {full_process_flag} {video_id}"'
     )
     subprocess.Popen(cmd_livechatbot, shell=True)
     print(f"[LAUNCH] Live Chat Bot started with stream ID: {video_id}")
 
     # 4) Launch live_transcriber.py in another new cmd window (again with the venv activated)
     cmd_transcriber = (
-        f'start cmd /k "call "{venv_activate}" && python live_transcriber.py"'
+        f'start cmd /k "call \"{venv_activate}\" && python live_transcriber.py"'
     )
     subprocess.Popen(cmd_transcriber, shell=True)
     print("[LAUNCH] Live Transcriber started in a separate window.")
 
 if __name__ == "__main__":
     main()
-
