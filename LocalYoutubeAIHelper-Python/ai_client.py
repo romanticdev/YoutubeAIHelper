@@ -40,12 +40,16 @@ class AIClient:
                 azure_endpoint=self.endpoint,
             )
             if whisper_config:
+                self.whisper_endpoint = self.whisper_config.get("azure_openai_endpoint",self.endpoint)
+                self.whisper_api_key = self.whisper_config.get("azure_openai_api_key",self.api_key)
+                self.whisper_api_version = self.whisper_config.get("azure_openai_api_version",self.api_version)
                 self.whisperclient = AzureOpenAI(
-                    api_key=self.api_key,
-                    api_version=self.whisper_config.get(
-                        "azure_openai_api_version", self.api_version
-                    ),
-                    azure_endpoint=self.endpoint,
+                    api_key=self.whisper_api_key,
+                    api_version=self.whisper_api_version,
+                    azure_endpoint=self.whisper_endpoint,
+                )
+                logger.info(
+                    f"Successfully initialized Azure Whsiper clients from endpoint {self.whisper_endpoint}"
                 )
             logger.info(
                 f"Successfully initialized Azure clients from endpoint {self.endpoint}"
@@ -70,19 +74,50 @@ class AIClient:
         retry=retry_if_exception_type(RateLimitError),
     )
     def create_chat_completion(self, messages, **kwargs):
+        
+        if self.use_azure:
+            model = kwargs.get("deployment_name", self.deployment_name)
+        else:
+            model = kwargs.get("model", self.config.get("default_model", ""))
+        
+        # If the model starts with "o1" or "o3", modify messages to remove system/developer roles
+        if model.lower().startswith("o1") or model.lower().startswith("o3"):
+            prefix = ""
+            non_system_messages = []
+            for msg in messages:
+                # Absorb system or developer instructions into the prefix
+                if msg["role"] in ("system", "developer"):
+                    prefix += msg["content"].strip() + "\n"
+                else:
+                    non_system_messages.append(msg)
+            # Prepend the concatenated instructions to the first user message, if available
+            if non_system_messages and prefix:
+                non_system_messages[0]["content"] = prefix + non_system_messages[0]["content"]
+            messages = non_system_messages
+            
+              
         if self.use_azure:
             parameters = {
                 "model": kwargs.get("deployment_name", self.deployment_name),
                 "messages": messages,
-                "max_tokens": int(
-                    kwargs.get("max_tokens", self.config.get("max_tokens", 4000))
-                ),
                 "temperature": float(
                     kwargs.get("temperature", self.config.get("temperature", 0.7))
                 ),
                 "top_p": float(kwargs.get("top_p", self.config.get("top_p", 1.0))),
-                "response_format": kwargs.get("response_format", None),
             }
+            
+            if "max_completion_tokens" in self.config:
+                parameters["max_completion_tokens"] = int(
+                    self.config["max_completion_tokens"]
+                )
+            else:
+                parameters["max_tokens"] = int(
+                    kwargs.get("max_tokens", self.config.get("max_tokens", 4000))
+                )
+                
+            if kwargs.get("response_format", None):
+                parameters["response_format"] = kwargs["response_format"]
+            
             if kwargs.get("function_call", None):
                 parameters["function_call"] = kwargs["function_call"]
 
@@ -101,6 +136,7 @@ class AIClient:
                 ),
                 "top_p": float(kwargs.get("top_p", self.config.get("top_p", 1.0))),
             }
+            
             
             if kwargs.get("response_format", None):
                 parameters["response_format"] = kwargs["response_format"]
