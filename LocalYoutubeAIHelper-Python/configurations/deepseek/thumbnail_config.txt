@@ -1,0 +1,10 @@
+{
+  "num_candidate_frames": 10,
+  "frame_selection_method": "contrast",
+  "font": "Arial",
+  "font_size": 40,
+  "font_color": "#FFFFFF",
+  "overlay_opacity": 0.7,
+  "text_position": "bottom",
+  "max_candidates": 3
+}

@@ -1,0 +1,10 @@
+{
+  "num_candidate_frames": 10,
+  "frame_selection_method": "contrast",
+  "font": "DejaVuSans",
+  "font_size": 150,
+  "font_color": "#FFAAAA",
+  "overlay_opacity": 0.5,
+  "text_position": "middle-center",
+  "max_candidates": 4
+}

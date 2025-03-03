@@ -5,6 +5,7 @@ from transcriber import Transcriber
 from youtube_update import YouTubeUpdater
 from prompt_processor import PromptProcessor
 from discussion_starters import DiscussionStarters
+from thumbnail_generator import ThumbnailGenerator
 from config import CONFIG, WHISPER_CONFIG, load_config_from_folder
 from utilities import setup_logging
 
@@ -47,6 +48,10 @@ def parse_arguments():
     # Generate Discussion starter
     parser_discussion = subparsers.add_parser('generate-discussion-starters', help="Generate discussion starters for the next stream")
    
+    # Generate thumbnails
+    parser_thumbnail = subparsers.add_parser('generate-thumbnail', help="Generate thumbnail candidates for video")
+    parser_thumbnail.add_argument('folder', help="Folder containing video and metadata")
+   
     # Update YouTube videos
     parser_update = subparsers.add_parser('update-youtube', help="Update YouTube videos using folder details")
     parser_update.add_argument('folder', help="Folder containing file_details.txt and optional metadata files")
@@ -67,6 +72,9 @@ def main():
     downloader = Downloader(config)
     transcriber = Transcriber(config, whisper_config)
     prompt_processor = PromptProcessor(config)
+    
+    if args.mode == 'generate-thumbnail' or args.mode == 'full-process':
+        thumbnail_generator = ThumbnailGenerator(args.config_folder)
 
     if (args.mode == 'full-process' and args.update_youtube) or \
         args.mode == 'update-youtube':
@@ -97,6 +105,12 @@ def main():
                 transcriber.improve_transcription(video_folder)
             prompt_processor.process_prompts_on_transcripts([video_folder])
             
+            # Generate thumbnail candidates
+            thumbnail_generator.video_folder = video_folder
+            thumbnail_paths = thumbnail_generator.generate_thumbnail()
+            if thumbnail_paths:
+                logger.info(f"Generated {len(thumbnail_paths)} thumbnail candidates in {video_folder}/thumbnails")
+            
             if args.update_youtube:
                 youtube_updater.process_update_youtube(video_folder)
                     
@@ -124,6 +138,14 @@ def main():
         ds = DiscussionStarters(config, whisper_config,number_of_streams=3)
         questions = ds.generate_questions()
         print("Generated Questions:\n", questions)
+        
+    elif args.mode == 'generate-thumbnail':
+        thumbnail_generator.video_folder = args.folder
+        thumbnail_paths = thumbnail_generator.generate_thumbnail()
+        if thumbnail_paths:
+            logger.info(f"Generated {len(thumbnail_paths)} thumbnail candidates in {args.folder}/thumbnails")
+            for path in thumbnail_paths:
+                logger.info(f"Thumbnail saved at: {path}")
 
 if __name__ == "__main__":
     main()

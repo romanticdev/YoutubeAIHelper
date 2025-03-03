@@ -400,3 +400,6 @@ FodyWeavers.xsd
 .vscode/*
 .cursorignore
 combined_files_for_llm.txt
+
+
+.venv/*

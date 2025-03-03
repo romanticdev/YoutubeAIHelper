@@ -1,0 +1,14 @@
+Create a short, engaging thumbnail title for a YouTube video. Your title should:
+
+1. Be 4-8 words maximum
+2. Include a powerful hook
+3. Create curiosity
+4. Be readable at small sizes
+5. Use action words when possible
+6. Avoid clickbait but remain enticing
+
+Based on this video summary:
+
+{summary}
+
+Respond with ONLY the thumbnail title text, nothing else.

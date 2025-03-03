@@ -1,3 +1,4 @@
 default_model=gpt-4o-mini
 max_tokens=16000
 temperature=0.8
+download_video=false

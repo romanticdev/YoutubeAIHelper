@@ -2,3 +2,4 @@
 model=gpt-4o
 max_tokens=16000
 temperature=0.5
+download_video=true

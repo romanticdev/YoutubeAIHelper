@@ -63,6 +63,20 @@ def ensure_directory_exists(path):
         os.makedirs(path, exist_ok=True)
     return path
 
+def create_dir_if_not_exists(path):
+    """
+    Creates a directory if it doesn't exist.
+    
+    Args:
+        path (str): Path to the directory to create.
+        
+    Returns:
+        str: The directory path.
+    """
+    if not os.path.exists(path):
+        os.makedirs(path, exist_ok=True)
+    return path
+
 def limit_tags_to_500_chars(tags_string):
     """
     Limits the total length of a tags string to no more than 500 characters.

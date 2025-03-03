@@ -12,6 +12,7 @@ class Downloader:
         """
         self.audio_bitrate = config.get('audio_bitrate', '12k')
         self.output_dir = config.get('default_output_dir', 'output')
+        self.download_video = config.get('download_video', 'false').lower() == 'true'
 
     @staticmethod
     def is_valid_media_file(file_path):
@@ -66,22 +67,36 @@ class Downloader:
                 file.write(f"youtube_id={video_id}\n")
             logger.info(f"Saved video details to {file_details_path}")
 
-            # Download video audio
-            audio_path = os.path.join(video_folder, f"{sanitized_title}.%(ext)s")
-            ydl_opts = {
-                'format': 'bestaudio/best',
-                'outtmpl': audio_path,
-                'quiet': False,
-            }
+            # Determine download format based on configuration
+            output_path = os.path.join(video_folder, f"{sanitized_title}.%(ext)s")
+            
+            if self.download_video:
+                # Download video with audio
+                logger.info("Downloading video with audio (mp4)")
+                ydl_opts = {
+                    'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+                    'outtmpl': output_path,
+                    'quiet': False,
+                    'merge_output_format': 'mp4',
+                }
+            else:
+                # Download audio only
+                logger.info("Downloading audio only")
+                ydl_opts = {
+                    'format': 'bestaudio/best',
+                    'outtmpl': output_path,
+                    'quiet': False,
+                }
+                
             with YoutubeDL(ydl_opts) as ydl:
                 ydl.download([url])
                 info_dict = ydl.extract_info(url, download=False)
                 actual_ext = info_dict.get('ext', 'webm')  # Get the actual extension used
 
-            downloaded_audio_path = os.path.join(video_folder, f"{sanitized_title}.{actual_ext}")
+            downloaded_path = os.path.join(video_folder, f"{sanitized_title}.{actual_ext}")
 
             # Convert audio to OGG format
-            ogg_file_path = self.convert_to_ogg(downloaded_audio_path, video_folder, sanitized_title)
+            ogg_file_path = self.convert_to_ogg(downloaded_path, video_folder, sanitized_title)
 
             logger.info(f"Download and conversion complete: {ogg_file_path}")
             return ogg_file_path, video_folder, sanitized_title
