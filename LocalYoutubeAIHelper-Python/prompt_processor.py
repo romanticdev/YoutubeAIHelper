@@ -56,6 +56,13 @@ class PromptProcessor:
                     if result:
                         generated_files.append(result)
 
+            # Also process the thumbnail prompt if it exists
+            thumbnail_prompt_file = os.path.join(self.prompts_folder, "thumbnail.txt")
+            if os.path.exists(thumbnail_prompt_file):
+                summary_file = os.path.join(folder, "summary.txt")
+                if os.path.exists(summary_file):
+                    self._process_thumbnail_prompt(thumbnail_prompt_file, summary_file, folder)
+                    
             # Substitute variables in generated files
             self._substitute_variables_in_files(folder, generated_files)
 
@@ -196,6 +203,38 @@ class PromptProcessor:
         logger.info(f"Saved response to: {output_file}")
         return output_file
 
+
+    def _process_thumbnail_prompt(self, thumbnail_prompt_file, summary_file, folder):
+        """
+        Process the thumbnail prompt with the summary content.
+        
+        Args:
+            thumbnail_prompt_file (str): Path to the thumbnail prompt file
+            summary_file (str): Path to the summary file
+            folder (str): Output folder for the thumbnail text
+        """
+        try:
+            # Load the thumbnail prompt template
+            prompt_content = load_file_content(thumbnail_prompt_file)
+            
+            # Load the summary content
+            summary_content = load_file_content(summary_file)
+            
+            # Format the prompt with the summary
+            formatted_prompt = prompt_content.format(summary=summary_content)
+            
+            # Send to AI for thumbnail text generation
+            thumbnail_text = self.client.create_completion(formatted_prompt)
+            
+            # Save the thumbnail text to a file
+            thumbnail_text_file = os.path.join(folder, "thumbnail_text.txt")
+            save_file_content(thumbnail_text_file, thumbnail_text)
+            
+            logger.info(f"Generated thumbnail text saved to: {thumbnail_text_file}")
+            return thumbnail_text_file
+        except Exception as e:
+            logger.error(f"Error processing thumbnail prompt: {e}")
+            return None
 
     def _substitute_variables_in_files(self, folder, generated_files):
         """

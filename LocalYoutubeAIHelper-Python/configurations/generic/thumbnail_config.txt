@@ -1,0 +1,11 @@
+{
+  "num_candidate_frames": 10,
+  "frame_selection_method": "contrast",
+  "_to_use_in_ubuntu_for_font":"DejaVuSans",
+  "font": "C:\\Windows\\Fonts\\impact.ttf",
+  "font_size": 200,
+  "font_color": "#FFFFFF",
+  "overlay_opacity": 0.5,
+  "text_position": "bottom-center",
+  "max_candidates": 4
+}

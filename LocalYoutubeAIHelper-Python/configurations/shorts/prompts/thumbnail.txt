@@ -1,0 +1,14 @@
+Create a short, catchy text for a YouTube Short thumbnail. Your text should:
+
+1. Be 2-4 words maximum
+2. Create instant curiosity
+3. Use strong, emotive language
+4. Be readable at small sizes
+5. Use action words or shocking statements
+6. Avoid clickbait but remain enticing
+
+Based on this video summary:
+
+{summary}
+
+Respond with ONLY the thumbnail text, nothing else.

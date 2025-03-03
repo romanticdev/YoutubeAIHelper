@@ -4,12 +4,6 @@
 
 This Python-based tool extends the functionality of the overall project by providing a more flexible and configurable environment to handle larger videos, run more complex prompt workflows, **interact with live YouTube chat**, and transcribe live audio. It can:
 
-												  
-																												   
-																									
-																															   
-																				  
-
 - **Download YouTube videos and extract their audio**.
 - **Transcribe long audio files** using OpenAI Whisper (either via OpenAI API or Azure OpenAI, if configured).
 - **Improve and refine transcripts** by applying custom LLM prompts (including JSON-structured outputs).
@@ -18,20 +12,16 @@ This Python-based tool extends the functionality of the overall project by provi
 - **Generate discussion starters** from your existing YouTube streams, pulling in context from transcripts and real-time news.
 - **Host a live chatbot** to respond automatically in YouTube Live Chat.
 - **Perform real-time local transcription** of your microphone feed (for personal use, e.g., auto-creating transcripts from your microphone input).
+- **Generate thumbnails** automatically from video frames with customized text overlay.
 
 ## Key Features
 
 1. **Flexible Downloading**  
    - Download YouTube videos and convert them to audio in `.ogg` format using `yt-dlp` and `ffmpeg`.
-																																											
-																																																																												   
-																														  
-																																																																				   
-																																																				   
-																																																				
+   - Option to download full video for thumbnail generation by setting `download_video=true` in llm_config.txt
 
 2. **Local and Remote Transcription**  
-   - Utilize the Whisper model via OpenAI’s API or Azure OpenAI’s Whisper deployment to convert audio to text.  
+   - Utilize the Whisper model via OpenAI's API or Azure OpenAI's Whisper deployment to convert audio to text.  
    - Handles long-duration audio by splitting it into manageable chunks.
 
 3. **Improved Transcripts**  
@@ -65,12 +55,20 @@ For instructions on using the **deepseek‑r1‑distill‑qwen‑7b** model with
 10. **Ollama Integration**
 For instructions on using local models with Ollama, please refer to the [Ollama Readme](configurations/ollama/readme.md).
 
+11. **Smart Thumbnail Generation**
+   - Automatically extract frames from videos using OpenCV with ffmpeg fallback
+   - Add customizable text overlays to create engaging thumbnails
+   - Support for multiple text positions (top-center, bottom-center, center, etc.)
+   - Individual line centering for multi-line text
+   - Fallback to colored backgrounds when video frames can't be extracted
+   - High-resolution (1920x1080) output optimized for YouTube
+
 ## Requirements
 
 You will need the following tools and dependencies installed:
 
 1. **Python**  
-   Download Python from [here](https://www.python.org/downloads/) and ensure it’s added to your system `PATH`.
+   Download Python from [here](https://www.python.org/downloads/) and ensure it's added to your system `PATH`.
 
    Verify installation:
    ```bash
@@ -98,6 +96,7 @@ You will need the following tools and dependencies installed:
    - `sounddevice` (for real-time mic or audio playback)
    - `serpapi` and `worldnewsapi` (if using the news extraction features)
    - `google-auth-oauthlib` + `google-api-python-client` (if updating or connecting to YouTube)
+   - `opencv-python` and `pillow` (for thumbnail generation)
 
 4. **Google API Credentials** (Optional, only if updating or interacting with YouTube)  
    If you plan to run `--update-youtube` or use the live chat features, follow the instructions in the **Google API Credentials** section below.
@@ -153,6 +152,7 @@ Each configuration folder (e.g., `configurations/generic/`) can have:
   model=gpt-3.5-turbo
   max_tokens=500
   openai_api_key=your_api_key_here
+  download_video=true  # Set to true for thumbnail generation
   ```
 
 - **`whisper_config.txt`** (optional)  
@@ -163,17 +163,33 @@ Each configuration folder (e.g., `configurations/generic/`) can have:
   improve_srt_content=path_or_inline_prompt_here
   ```
 
+- **`thumbnail_config.txt`** (for thumbnail generation)  
+  Contains settings for the thumbnail generator:
+  ```plaintext
+  {
+    "num_candidate_frames": 10,
+    "frame_selection_method": "contrast",
+    "font": "DejaVuSans.ttf",
+    "font_size": 80,
+    "font_color": "#FFFFFF",
+    "overlay_opacity": 0.7,
+    "text_position": "bottom-center",
+    "max_candidates": 4
+  }
+  ```
+
 - **`prompts/` folder**  
   Contains `.txt` and optional `.schema.json` files for each prompt. For example:
   ```plaintext
   summary.txt
   summary.schema.json
   keywords.txt
+  thumbnail.txt
   ```
 
 ### 4. Prompts and JSON Schemas
 
-You can define as many `.txt` prompt files as you like. For JSON output, include a `.schema.json` file named similarly to the prompt file (e.g., `summary.schema.json` for `summary.txt`). The tool will ensure the LLM’s response matches the schema.
+You can define as many `.txt` prompt files as you like. For JSON output, include a `.schema.json` file named similarly to the prompt file (e.g., `summary.schema.json` for `summary.txt`). The tool will ensure the LLM's response matches the schema.
 
 ### 5. Google API Credentials (For YouTube Updates or Live Chat)
 
@@ -182,18 +198,13 @@ To update YouTube metadata, upload subtitles, or post messages in live chat:
 1. Create a Google Cloud project and enable the YouTube Data API v3.
 2. Obtain OAuth 2.0 credentials and download `client_secret_youtube.json`.
 3. Place `client_secret_youtube.json` in the same directory as `main.py`.
-4. The first time you run a command that updates or accesses YouTube live chat, you’ll be prompted for an OAuth flow. A `token.json` will be saved for subsequent uses.
+4. The first time you run a command that updates or accesses YouTube live chat, you'll be prompted for an OAuth flow. A `token.json` will be saved for subsequent uses.
 
 ## Usage Overview
 
 You can run multiple scripts for different tasks. The main entry point is **`main.py`**, which supports several modes. Additionally, specialized scripts like **`livechatbot.py`** or **`live_transcriber.py`** handle live scenarios.
 
-					  
-																												   
-			   
-		  
 ### 1. `main.py` Modes
-	  
 
 - **full-process**  
   Downloads, transcribes, improves SRT (if not disabled), runs prompts, and optionally updates YouTube metadata.  
@@ -208,7 +219,7 @@ You can run multiple scripts for different tasks. The main entry point is **`mai
 
 - **download**  
   Only downloads the specified YouTube videos as audio files.  
-			   
+	   
   ```bash
   python main.py \
       --config-folder configurations/generic \
@@ -217,7 +228,7 @@ You can run multiple scripts for different tasks. The main entry point is **`mai
 
 - **transcribe**  
   Only transcribes audio files (e.g., `.ogg`, `.mp3`) in the specified folder.  
-			   
+	   
   ```bash
   python main.py \
       --config-folder configurations/generic \
@@ -226,7 +237,7 @@ You can run multiple scripts for different tasks. The main entry point is **`mai
 
 - **improve-srt**  
   Improves existing SRT files using LLM prompts (defined in `whisper_config.txt`).  
-			   
+	   
   ```bash
   python main.py \
       --config-folder configurations/generic \
@@ -249,6 +260,14 @@ You can run multiple scripts for different tasks. The main entry point is **`mai
       update-youtube <folder>
   ```
 
+- **generate-thumbnail**  
+  Creates thumbnail candidates from video frames with text overlay.  
+  ```bash
+  python main.py \
+      --config-folder configurations/generic \
+      generate-thumbnail <folder>
+  ```
+
 - **generate-discussion-starters**  
   Builds a set of discussion prompts based on your last few live streams and optionally includes relevant AI/general news.  
   ```bash
@@ -263,7 +282,7 @@ You can run multiple scripts for different tasks. The main entry point is **`mai
 This script connects to your active YouTube Live Chat, listens for incoming user messages, and responds automatically with GPT-based logic. It can:
 
 - Filter out messages that do not require a response (via a `message_filter.txt`).
-- Call “functions” (like `get_latest_ai_news`, `get_last_stream_context`, etc.) to generate more context-aware answers.
+- Call "functions" (like `get_latest_ai_news`, `get_last_stream_context`, etc.) to generate more context-aware answers.
 - Post messages back to the live chat.
 
 **Quick Start**:
@@ -285,14 +304,14 @@ Once running, it will:
 - Fetch new chat messages every few seconds.
 - Decide if the bot should respond (based on the `message_filter` logic).
 - Generate a response from GPT.  
-- Optionally call any “function” it requests (like retrieving news, last stream transcripts or current transcript).
+- Optionally call any "function" it requests (like retrieving news, last stream transcripts or current transcript).
 - Post the final text back to the live chat.
 
 > **Tip**: Modify `livechatbot_functions.py` to add or remove function calls that GPT can use.
 
 ### 3. `live_transcriber.py` (Real-Time Local Audio Transcriber)
 
-The `live_transcriber.py` script captures audio from your **microphone** in real time and passes it to a local Whisper model (`whisper` from OpenAI’s whisper library, loaded on your machine). It then:
+The `live_transcriber.py` script captures audio from your **microphone** in real time and passes it to a local Whisper model (`whisper` from OpenAI's whisper library, loaded on your machine). It then:
 
 - Accumulates short chunks of audio (e.g., ~5 seconds).
 - Transcribes them using the **local** Whisper model (not over the network).
@@ -318,7 +337,7 @@ The `discussion_starters.py` module is designed to:
 2. **Ensure** their transcripts are downloaded or transcribed locally.
 3. Optionally retrieve real-time news (AI or general).
 4. Build a comprehensive prompt that references both the current and previous stream transcripts.
-5. Generate “conversation starter” questions or prompts using GPT.
+5. Generate "conversation starter" questions or prompts using GPT.
 
 **How to use**:
 - Via the main script:
@@ -333,11 +352,47 @@ The `discussion_starters.py` module is designed to:
   print(questions)
   ```
 
-### 5. Using Local Models with Ollama
+### 5. Thumbnail Generator
+
+The `thumbnail_generator.py` module creates high-quality YouTube thumbnails:
+
+1. Extracts frames from video files using OpenCV or ffmpeg
+2. Selects the best frames based on contrast, brightness, and sharpness
+3. Adds text overlay with configurable positioning and styling
+4. Creates multiple thumbnail candidates for selection
+
+**Features**:
+- Smart frame selection to find the most visually appealing frames
+- Text overlay with configurable position (top, bottom, center, etc.)
+- Individual line centering for multi-line text
+- Semi-transparent background behind text for better readability
+- Fallback to colored backgrounds if video frames can't be extracted
+- High-resolution (1920x1080) output for YouTube
+
+**How to use**:
+```bash
+python main.py --config-folder configurations/generic generate-thumbnail <folder>
+```
+
+Configuration is controlled via `thumbnail_config.txt`:
+```json
+{
+  "num_candidate_frames": 10,
+  "frame_selection_method": "contrast",
+  "font": "DejaVuSans.ttf",
+  "font_size": 80,
+  "font_color": "#FFFFFF",
+  "overlay_opacity": 0.7,
+  "text_position": "bottom-center",
+  "max_candidates": 4
+}
+```
+
+### 6. Using Local Models with Ollama
 
 To run local LLMs (e.g., Llama 2) on your machine and connect them through an OpenAI-compatible interface, you can use [**Ollama**](https://ollama.com). The setup steps are described in [**configurations/ollama/readme.md**](configurations/ollama/readme.md).
 
-Once configured, simply ensure your `local.env` file is pointing to Ollama’s local endpoint:
+Once configured, simply ensure your `local.env` file is pointing to Ollama's local endpoint:
 
 ```env
 OPENAI_API_KEY=dummy-ollama-key
@@ -348,7 +403,7 @@ DEFAULT_MODEL=phi42
 
 Then, the rest of the commands (e.g., \`python main.py full-process\`) will transparently use your local Ollama model.
 
-### 6. Using LM Studio for Local LLMs
+### 7. Using LM Studio for Local LLMs
 
 You can also use LM Studio to host local LLMs and connect to them via the Local YouTube AI Helper. For instructions on setting up LM Studio and connecting to it, refer to the [**configurations/deepseek/readme.md**](configurations/deepseek/readme.md).
 
@@ -369,7 +424,18 @@ This will:
 2. Transcribe it (splitting into chunks if needed).
 3. Improve the SRT (if `improve_srt_content` is defined).
 4. Execute all prompts found in `prompts/` directory.
-5. Update the YouTube metadata and upload improved subtitles.
+5. Generate thumbnails (if download_video=true in config).
+6. Update the YouTube metadata and upload improved subtitles.
+
+**Just Generate Thumbnails**:
+
+If you already have a downloaded and processed video and want to create thumbnails:
+
+```bash
+python main.py \
+    --config-folder configurations/generic \
+    generate-thumbnail "./videos/YourVideoTitle"
+```
 
 **Just Run Prompts**:
 
@@ -384,11 +450,13 @@ python main.py \
 ## Troubleshooting & Tips
 
 - **Dependencies Not Found**: Ensure `ffmpeg` and `yt-dlp` are installed and in your PATH.  
-- **API Key Issues**: Check `local.env` and `llm_config.txt` for correct keys and ensure you’re not mixing Azure vs. OpenAI.  
+- **API Key Issues**: Check `local.env` and `llm_config.txt` for correct keys and ensure you're not mixing Azure vs. OpenAI.  
 - **Large Files**: The script automatically splits large audio files. Ensure you have enough disk space and check the logs for chunk info.  
 - **YouTube Authentication**: If `update-youtube` or live chat fails, delete `token.json` and re-run to re-authenticate.  
-- **Using `livechatbot.py`**: Make sure your system prompts (`chatbot_response.txt`, `message_filter.txt`) are well-defined so the bot doesn’t spam the chat.  
+- **Using `livechatbot.py`**: Make sure your system prompts (`chatbot_response.txt`, `message_filter.txt`) are well-defined so the bot doesn't spam the chat.  
 - **Local vs. Cloud Whisper**: `live_transcriber.py` uses local Whisper; the main pipeline uses the OpenAI or Azure Whisper API. Choose whichever suits your setup.
+- **Thumbnail Generation**: If OpenCV fails to extract frames (common with AV1 codec in WSL), the system will fall back to ffmpeg. If both fail, it will generate colored background thumbnails.
+- **OpenCV Issues**: If you encounter NumPy compatibility issues with OpenCV, try: `pip uninstall -y numpy && pip install numpy==1.26.4`
 
 ## Contributions
 

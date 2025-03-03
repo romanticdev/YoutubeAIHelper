@@ -19,3 +19,12 @@ worldnewsapi==2.0.0
 sounddevice==0.5.1
 pydub==0.25.1
 simpleaudio==1.0.4
+
+# For thumbnail generation
+pillow==10.2.0
+# Must use NumPy 1.x for compatibility with OpenCV
+numpy==1.26.4
+opencv-python==4.9.0.80
+
+# External system dependencies:
+# sudo apt-get install ffmpeg libasound2-dev

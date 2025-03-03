@@ -3,6 +3,7 @@ import queue
 import sounddevice as sd
 import numpy as np
 import whisper
+import torch
 import threading
 import os
 from utilities import get_active_transcript_file  
@@ -10,8 +11,13 @@ from datetime import datetime
 
 CUTOFF_MINUTES = 60
 
+if not torch.cuda.is_available():
+    print("CUDA is not available. Please check your PyTorch installation and CUDA setup.")
+else:
+    print(f"Using GPU: {torch.cuda.get_device_name(0)}")
+
 # Load Whisper model
-model = whisper.load_model("small")
+model = whisper.load_model("turbo", device="cuda" if torch.cuda.is_available() else "cpu")
 
 SAMPLE_RATE = 16000
 CHUNK_DURATION = 1.0  # seconds per callback chunk
