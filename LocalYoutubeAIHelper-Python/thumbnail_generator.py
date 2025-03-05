@@ -394,9 +394,14 @@ class ThumbnailGenerator:
                       if f.endswith(('.mp4', '.mkv', '.webm', '.avi', '.m4a'))]
         
         if not video_files:
-            # If no video file found, try using a default thumbnail or placeholder image
-            logging.warning(f"No video files found in {self.video_folder}, using placeholder image")
-            return self._generate_text_based_thumbnails()
+            # If no video file found, fall back to text-based thumbnails
+            logging.warning(f"No video files found in {self.video_folder}, using text-based thumbnails")
+            try:
+                text_thumbnail_paths = self._generate_text_based_thumbnails()
+                return text_thumbnail_paths if text_thumbnail_paths else []
+            except Exception as e:
+                logging.error(f"Failed to generate text-based thumbnails: {e}")
+                return []
             
         video_path = os.path.join(self.video_folder, video_files[0])
         
@@ -472,30 +477,38 @@ class ThumbnailGenerator:
         # Otherwise generate new thumbnail text
         summary_path = os.path.join(self.video_folder, "summary.txt")
         if os.path.exists(summary_path):
-            with open(summary_path, "r", encoding="utf-8") as f:
-                summary = f.read().strip()
-            
-            # Load thumbnail prompt template
-            prompt_path = os.path.join(self.config_folder, "prompts", "thumbnail.txt")
-            if os.path.exists(prompt_path):
-                with open(prompt_path, "r", encoding="utf-8") as f:
-                    prompt_template = f.read()
-            else:
-                prompt_template = "Create a short, engaging thumbnail title (max 8 words) based on this content summary:\n\n{summary}"
-            
-            # Generate thumbnail text
             try:
-                prompt = prompt_template.format(summary=summary)
-                thumbnail_text = self.ai_client.create_completion(prompt).strip()
-                logging.info(f"Generated thumbnail text: {thumbnail_text}")
+                with open(summary_path, "r", encoding="utf-8") as f:
+                    summary = f.read().strip()
                 
-                # Save thumbnail text for future use
-                with open(thumbnail_text_path, "w", encoding="utf-8") as f:
-                    f.write(thumbnail_text)
+                # Load thumbnail prompt template
+                prompt_path = os.path.join(self.config_folder, "prompts", "thumbnail.txt")
+                if os.path.exists(prompt_path):
+                    with open(prompt_path, "r", encoding="utf-8") as f:
+                        prompt_template = f.read()
+                else:
+                    prompt_template = "Create a short, engaging thumbnail title (max 8 words) based on this content summary:\n\n{summary}"
+                
+                # Generate thumbnail text
+                try:
+                    prompt = prompt_template.format(summary=summary)
+                    thumbnail_text = self.ai_client.create_chat_completion(
+                        messages=[
+                            {"role": "user", "content": prompt}
+                        ]
+                    ).choices[0].message.content.strip()
                     
-                return thumbnail_text
+                    logging.info(f"Generated thumbnail text: {thumbnail_text}")
+                    
+                    # Save thumbnail text for future use
+                    with open(thumbnail_text_path, "w", encoding="utf-8") as f:
+                        f.write(thumbnail_text)
+                        
+                    return thumbnail_text
+                except Exception as e:
+                    logging.error(f"Failed to generate thumbnail text: {e}")
             except Exception as e:
-                logging.error(f"Failed to generate thumbnail text: {e}")
+                logging.error(f"Error reading summary file: {e}")
         
         # Fallback to title text if available
         title_path = os.path.join(self.video_folder, "title.txt")
@@ -504,7 +517,7 @@ class ThumbnailGenerator:
                 thumbnail_text = f.read().strip()
                 return thumbnail_text
                 
-        return "Click to Watch"
+        return "Click to Watch"  # Ultimate fallback
     
     def _generate_text_based_thumbnails(self):
         """Generate basic thumbnails with just text on a colored background"""
